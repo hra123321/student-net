@@ -7,7 +7,6 @@ import struct
 import time
 import ctypes
 import ctypes.util
-import threading
 import logging
 from typing import Tuple, Optional
 
@@ -31,9 +30,23 @@ class ICMPEcho:
             self.IcmpCreateFile = self.dll.IcmpCreateFile
             self.IcmpCloseHandle = self.dll.IcmpCloseHandle
             self.IcmpSendEcho = self.dll.IcmpSendEcho
+
+            # 64位系统上句柄是64位的
             self.IcmpCreateFile.restype = ctypes.c_void_p
+            self.IcmpCreateFile.argtypes = []
             self.IcmpCloseHandle.restype = ctypes.c_int
+            self.IcmpCloseHandle.argtypes = [ctypes.c_void_p]
             self.IcmpSendEcho.restype = ctypes.c_uint32
+            self.IcmpSendEcho.argtypes = [
+                ctypes.c_void_p,       # IcmpHandle
+                ctypes.c_uint32,       # DestinationAddress
+                ctypes.c_void_p,       # RequestData
+                ctypes.c_uint16,       # RequestSize
+                ctypes.c_void_p,       # RequestOptions
+                ctypes.c_void_p,       # ReplyBuffer
+                ctypes.c_uint32,       # ReplySize
+                ctypes.c_uint32        # Timeout
+            ]
         except AttributeError as e:
             logger.warning("ICMP API 加载失败: %s", e)
             self.IcmpCreateFile = None
@@ -44,25 +57,27 @@ class ICMPEcho:
             return False, 0
 
         handle = self.IcmpCreateFile()
-        if handle is None or handle == 0:
+        if not handle or handle == 0:
             return False, 0
 
         try:
-            # 准备 IP 地址
             ip_bytes = socket.inet_aton(ip)
             ip_int = struct.unpack(">I", ip_bytes)[0]
 
             # 准备请求数据
-            data = b"a" * 32
-            reply_size = 8 + 32 + ctypes.sizeof(ctypes.c_uint32) * 4
+            data = (b"a" * 32)
+            data_buf = ctypes.create_string_buffer(data, 32)
+
+            # 回复缓冲区 (IP header 8 + ICMP header 8 + 32 data + 4*3 padding)
+            reply_size = 64
             reply = ctypes.create_string_buffer(reply_size)
 
             start = time.time()
             ret = self.IcmpSendEcho(
                 handle,
                 ip_int,
-                data,
-                len(data),
+                data_buf,
+                32,
                 None,
                 reply,
                 reply_size,
@@ -70,15 +85,12 @@ class ICMPEcho:
             )
             elapsed = (time.time() - start) * 1000
 
-            if ret == 0:
-                return False, elapsed
+            success = ret > 0
+            return success, elapsed
 
-            # 解析回复
-            reply_data = bytearray(reply)
-            status = struct.unpack_from("<I", reply_data, 4)[0]
-            if status == 0:  # IP_SUCCESS
-                return True, elapsed
-            return False, elapsed
+        except Exception as e:
+            logger.debug("Ping 异常: %s", e)
+            return False, 0
         finally:
             self.IcmpCloseHandle(handle)
 
@@ -90,9 +102,6 @@ class NetworkMonitor:
         self.icmp = ICMPEcho()
         self._gateway_ip = None
         self._gateway_last_found = 0
-        self._lock = threading.Lock()
-        self._last_ping_latency = 0.0
-        self._last_packet_loss = 0.0
         self._ping_history = []
 
     def get_gateway(self) -> Optional[str]:
@@ -102,7 +111,6 @@ class NetworkMonitor:
             return self._gateway_ip
 
         try:
-            # 通过路由表获取默认网关
             import subprocess
             result = subprocess.run(
                 ["route", "print", "0.0.0.0"],
@@ -131,37 +139,35 @@ class NetworkMonitor:
             import psutil
             stats = psutil.net_if_stats()
             interfaces = psutil.net_if_addrs()
-
             active = False
             for name, s in stats.items():
-                if s.isup and name not in ("lo", "Loopback"):
-                    # 检查是否有有效 IP
+                if s.isup and "loopback" not in name.lower() and name not in ("lo",):
                     if name in interfaces:
                         for addr in interfaces[name]:
-                            if addr.family == socket.AF_INET:
+                            if addr.family == socket.AF_INET and not addr.address.startswith("127."):
                                 active = True
                                 break
                     if active:
                         break
-
             if not active:
                 return NETWORK_DISCONNECTED, 0, 100
         except ImportError:
             pass
 
-        # 2. 获取网关并 Ping
+        # 2. Ping 网关
         gateway = self.get_gateway()
         if gateway:
             ok, lat = self.icmp.ping(gateway, 3000)
+            self._ping_history.append(ok)
+            if len(self._ping_history) > 10:
+                self._ping_history.pop(0)
+            loss_count = self._ping_history.count(False)
+            loss_pct = (loss_count / max(len(self._ping_history), 1)) * 100
+
             if ok:
                 status = NETWORK_OK
                 latency = lat
-                # 计算丢包率（滚动记录）
-                self._ping_history.append(ok)
-                if len(self._ping_history) > 10:
-                    self._ping_history.pop(0)
-                loss_count = self._ping_history.count(False)
-                loss = (loss_count / len(self._ping_history)) * 100
+                loss = loss_pct
             else:
                 status = NETWORK_LIMITED
                 loss = 100
@@ -172,7 +178,6 @@ class NetworkMonitor:
         if status != NETWORK_OK:
             try:
                 socket.gethostbyname("baidu.com")
-                # DNS 通但 Ping 不通 -> 受限
                 if status == NETWORK_DISCONNECTED:
                     status = NETWORK_LIMITED
             except Exception:
@@ -180,7 +185,3 @@ class NetworkMonitor:
                     status = NETWORK_DISCONNECTED
 
         return status, latency, loss
-
-    def get_ping_stats(self) -> Tuple[float, float]:
-        """获取当前 Ping 延迟和丢包率"""
-        return self._last_ping_latency, self._last_packet_loss
