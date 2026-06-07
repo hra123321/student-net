@@ -22,6 +22,10 @@ all.min.js
 Utils.js
 portal_page.html
 
+# 构建输出
+dist/
+build/
+
 # IDE
 .vscode/
 .idea/
