@@ -1,0 +1,29 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.spec
+
+# 项目数据（运行时生成）
+data/traffic_daily.json
+data/network_backup.json
+data/crash.log
+
+# 凭据配置（含明文密码，不提交）
+config.json
+
+# 临时分析文件（从 Portal 下载的 JS/HTML）
+Portal.js
+main.js
+all.min.js
+Utils.js
+portal_page.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

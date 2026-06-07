@@ -1,0 +1,13 @@
+﻿{
+  "portal_url": "http://192.168.151.10",
+  "login_page": "/srun_portal_pc",
+  "username": "你的学号",
+  "password": "你的密码",
+  "ac_id": "1",
+  "check_interval": 30,
+  "retry_max": 5,
+  "retry_cooldown": 180,
+  "auto_start": true,
+  "keepalive_ping_interval": 30,
+  "keepalive_http_interval": 120
+}
