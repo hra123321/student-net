@@ -7,6 +7,7 @@ from tkinter import ttk
 import logging
 import threading
 import time
+from core.traffic_stats import TrafficStats
 
 logger = logging.getLogger("CampusNet.UI")
 
