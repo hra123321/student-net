@@ -29,11 +29,16 @@ def elevate():
     params = " ".join(sys.argv[1:])
 
     try:
-        ctypes.windll.shell32.ShellExecuteW(
+        ret = ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, f'"{script}" {params}', None, 1
         )
+        if ret <= 32:  # ShellExecuteW 失败返回值
+            raise Exception(f"ShellExecuteW returned {ret}")
     except Exception as e:
         logger.error("提权失败: %s", e)
+        ctypes.windll.user32.MessageBoxW(
+            None, "请求管理员权限失败！\n请手动右键点击程序，选择「以管理员身份运行」。", "权限错误", 0
+        )
         return False
 
     # 退出当前非管理员进程

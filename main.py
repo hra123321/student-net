@@ -2,6 +2,7 @@
 校园网登录助手 - 主入口
 单例检测 → 管理员提权 → 加载配置 → 启动各线程 → 托盘驻留
 """
+import ctypes
 import json
 import logging
 import os
@@ -546,7 +547,9 @@ def main():
             logger.info("已从 config.example.json 复制配置")
         else:
             logger.error("请创建 config.json 配置文件")
-            input("按回车退出...")
+            ctypes.windll.user32.MessageBoxW(
+                None, "config.json 配置文件不存在！\n请将 config.example.json 重命名为 config.json 并填写账号密码。", "配置错误", 0
+            )
             sys.exit(1)
 
     # 单例检测（Windows Mutex）
@@ -583,7 +586,15 @@ def main():
     except Exception as e:
         logger.error("应用异常: %s", e)
         import traceback
-        traceback.print_exc()
+        tb = traceback.format_exc()
+        logger.error(tb)
+        # 弹窗显示错误（无控制台时用户可见）
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                None, f"程序运行出错：\n{e}\n\n详情见日志文件：\n{os.path.join(os.path.dirname(sys.executable) if getattr(sys,"frozen",False) else BASE_DIR, "data", "crash.log")}", "错误", 0
+            )
+        except:
+            pass
         app.stop()
 
 

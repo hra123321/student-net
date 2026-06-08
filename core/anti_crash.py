@@ -16,7 +16,12 @@ import traceback
 
 logger = logging.getLogger("CampusNet.AntiCrash")
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+# Fix: use EXE directory for PyInstaller compatibility
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
 LOG_FILE = os.path.join(DATA_DIR, "crash.log")
 
 
