@@ -200,9 +200,8 @@ class CampusNetApp:
 
             # 实时速率
             session = self.traffic.get_session_stats()
-            from core.traffic_stats import TrafficStats as TS
-            up = TS.format_speed(session.get("speed_sent", 0))
-            down = TS.format_speed(session.get("speed_recv", 0))
+            up = TrafficStats.format_speed(session.get("speed_sent", 0))
+            down = TrafficStats.format_speed(session.get("speed_recv", 0))
 
             self._speed_info = {
                 "up": up,
@@ -220,14 +219,13 @@ class CampusNetApp:
         try:
             session = self.traffic.get_session_stats()
             daily = self.traffic.get_daily_stats()
-            from core.traffic_stats import TrafficStats as TS
             return {
-                "session_up": TS.format_bytes(session.get("sent", 0)),
-                "session_down": TS.format_bytes(session.get("recv", 0)),
-                "session_total": TS.format_bytes(session.get("total", 0)),
-                "daily_up": TS.format_bytes(daily.get("sent", 0)),
-                "daily_down": TS.format_bytes(daily.get("recv", 0)),
-                "daily_total": TS.format_bytes(daily.get("sent", 0) + daily.get("recv", 0)),
+                "session_up": TrafficStats.format_bytes(session.get("sent", 0)),
+                "session_down": TrafficStats.format_bytes(session.get("recv", 0)),
+                "session_total": TrafficStats.format_bytes(session.get("total", 0)),
+                "daily_up": TrafficStats.format_bytes(daily.get("sent", 0)),
+                "daily_down": TrafficStats.format_bytes(daily.get("recv", 0)),
+                "daily_total": TrafficStats.format_bytes(daily.get("sent", 0) + daily.get("recv", 0)),
             }
         except Exception:
             return {}
