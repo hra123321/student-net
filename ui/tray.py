@@ -166,17 +166,19 @@ class SysTrayIcon:
 
         atom = ctypes.windll.user32.RegisterClassW(ctypes.byref(wnd_class))
         if atom == 0:
-            raise ctypes.WinError()
-        return class_name
+            err = ctypes.WinError()
+            logger.error("RegisterClassW failed: %s", err)
+            raise err
+        return class_name, hInstance
 
     def show(self):
         """显示托盘图标"""
-        class_name = self._register_window_class()
+        class_name, hInstance = self._register_window_class()
         self._callback_msg = WM_USER + 100
 
         self._hwnd = ctypes.windll.user32.CreateWindowExW(
             0, class_name, "CampusNetTray", 0,
-            0, 0, 0, 0, 0, 0, None, None
+            0, 0, 0, 0, 0, 0, hInstance, None
         )
 
         if not self._hwnd:
@@ -198,9 +200,13 @@ class SysTrayIcon:
         self._nid.uVersion = NOTIFYICON_VERSION
 
         # 添加图标
-        ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self._nid))
+        ret = ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self._nid))
+        if ret == 0:
+            err = ctypes.windll.kernel32.GetLastError()
+            logger.error("Shell_NotifyIconW failed: %d", err)
+            ctypes.windll.user32.MessageBoxW(None, "托盘图标添加失败", "提示", 0)
+            return
         ctypes.windll.shell32.Shell_NotifyIconW(NIM_SETVERSION, ctypes.byref(self._nid))
-
         self._running = True
         logger.info("托盘图标已显示")
 
