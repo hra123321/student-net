@@ -538,18 +538,11 @@ def main():
 
     logger.info("=== 校园网登录助手 ===")
 
-    # 尝试获取管理员权限（失败不影响运行）
-    if not is_admin():
-        try:
-            logger.info("尝试提权管理员...")
-            elevate()
-            # elevate() 会在新进程启动后返回
-            # 如果原进程还在运行，说明提权可能被取消
-            logger.warning("提权未确认或已取消，以普通用户权限运行（部分功能受限）")
-        except Exception as e:
-            logger.warning("提权失败: %s，以普通用户权限运行", e)
-    else:
+    # 打印权限状态（不强制提权）
+    if is_admin():
         logger.info("管理员权限已获取")
+    else:
+        logger.warning("以普通用户权限运行（网络优化需管理员）")
 
     # 数据目录
     os.makedirs(DATA_DIR, exist_ok=True)
