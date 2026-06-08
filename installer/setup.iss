@@ -1,42 +1,54 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.8"
+#define MyAppVersion "1.3.1"
 #define MyAppPublisher "CampusNet"
-#define MyAppExeName "校园网登录助手.exe"
-#define MyRoot "..\"
+#define MyAppURL "https://github.com/hra123321/student-net"
+#define MyAppExeName "校园网登录助手_v1.3.exe"
+#define SrcDir "C:\Users\123\Documents\校园网登录助手"
 
 [Setup]
-AppId={{8A2E4B1C-3F5D-4A6E-9B7C-8D9E0F1A2B3C}
+AppId={{7A8B1C2D-3E4F-5A6B-7C8D-9E0F1A2B3C4D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
-DefaultGroupName={#MyAppName}
-AllowNoIcons=yes
-OutputDir=..\dist
-OutputBaseFilename=校园网登录助手_Setup
-Compression=lzma
-SolidCompression=yes
-WizardStyle=modern
-PrivilegesRequired=admin
 DisableProgramGroupPage=yes
+DisableDirPage=auto
+OutputDir={#SrcDir}\installer
+OutputBaseFilename=校园网登录助手_Setup_v1.3.1
+SetupIconFile=
+UninstallDisplayIcon={app}\{#MyAppExeName}
+Compression=lzma2/max
+SolidCompression=yes
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=commandline
+AlwaysRestart=no
+ShowLanguageDialog=no
 
-[Tasks]
-Name: "autostart"; Description: "Auto start on boot"; GroupDescription: "Startup options:"
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\dist\校园网登录助手\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SrcDir}\dist_v1.3\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SrcDir}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
+
+[Dirs]
+Name: "{app}\data"
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{commonprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{commonprograms}\{#MyAppName}\卸载"; Filename: "{uninstallexe}"
 
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Run 校园网登录助手"; Flags: postinstall nowait skipifsilent shellexec
+[Tasks]
+Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Shortcuts:"
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: "{app}\{#MyAppExeName}"; Tasks: autostart
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "校园网登录助手"; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletevalue
+
+[Run]
+Filename: "{app}\{#MyAppExeName}"; Description: "Run 校园网登录助手"; Flags: nowait postinstall skipifsilent shellexec
 
 [UninstallRun]
-Filename: "taskkill"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden
+Filename: "taskkill"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden

@@ -41,7 +41,8 @@ def elevate():
         )
         return False
 
-    # 退出当前非管理员进程
+    # 新进程已启动，退出当前非管理员进程
+    logger.info("已启动管理员进程，退出当前进程")
     sys.exit(0)
 
 

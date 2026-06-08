@@ -11,9 +11,15 @@ import threading
 import time
 import uuid
 
-# 将项目根目录加入路径
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 路径适配
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+    MEIPASS_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    MEIPASS_DIR = BASE_DIR
 sys.path.insert(0, BASE_DIR)
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 from core.anti_crash import setup_logging, safe_thread, Watchdog, ProcessCleaner
 from core.network_monitor import NetworkMonitor, NETWORK_OK, NETWORK_DISCONNECTED
@@ -532,34 +538,52 @@ def main():
 
     logger.info("=== 校园网登录助手 ===")
 
-    # 检查并请求管理员权限
+    # 尝试获取管理员权限（失败不影响运行）
     if not is_admin():
-        logger.info("需要管理员权限，正在提权...")
-        elevate()
-        return  # elevate 会启动新进程后退出
+        try:
+            logger.info("尝试提权管理员...")
+            elevate()
+            # elevate() 会在新进程启动后返回
+            # 如果原进程还在运行，说明提权可能被取消
+            logger.warning("提权未确认或已取消，以普通用户权限运行（部分功能受限）")
+        except Exception as e:
+            logger.warning("提权失败: %s，以普通用户权限运行", e)
+    else:
+        logger.info("管理员权限已获取")
 
-    logger.info("管理员权限已获取")
+    # 数据目录
+    os.makedirs(DATA_DIR, exist_ok=True)
 
     # 检查配置文件
     config_path = os.path.join(BASE_DIR, "config.json")
     if not os.path.exists(config_path):
-        logger.error("config.json 不存在!")
-        # 尝试从模板复制
-        example_path = os.path.join(BASE_DIR, "config.example.json")
-        if os.path.exists(example_path):
+        logger.info("config.json 不存在，从嵌入资源复制...")
+        example_embedded = os.path.join(MEIPASS_DIR, "config.example.json")
+        if os.path.exists(example_embedded):
             import shutil, codecs
-            # 读取模板（可能带 BOM）并写入无 BOM 副本
-            with codecs.open(example_path, "r", encoding="utf-8-sig") as fr:
+            with codecs.open(example_embedded, "r", encoding="utf-8-sig") as fr:
                 raw = fr.read()
             with open(config_path, "w", encoding="utf-8") as fw:
                 fw.write(raw)
-            logger.info("已从 config.example.json 复制配置（已去除 BOM）")
+            logger.info("已从嵌入资源复制配置到 %%s", config_path)
         else:
-            logger.error("请创建 config.json 配置文件")
-            ctypes.windll.user32.MessageBoxW(
-                None, "config.json 配置文件不存在！\n请将 config.example.json 重命名为 config.json 并填写账号密码。", "配置错误", 0
-            )
-            sys.exit(1)
+            example_local = os.path.join(BASE_DIR, "config.example.json")
+            if os.path.exists(example_local):
+                import shutil, codecs
+                with codecs.open(example_local, "r", encoding="utf-8-sig") as fr:
+                    raw = fr.read()
+                with open(config_path, "w", encoding="utf-8") as fw:
+                    fw.write(raw)
+                logger.info("已从本地 config.example.json 复制配置")
+            else:
+                logger.error("config.json 不存在！")
+                ctypes.windll.user32.MessageBoxW(
+                    None, "配置文件不存在！\n将在当前目录创建 config.example.json，填写后重启。", "配置错误", 0
+                )
+                with open(os.path.join(BASE_DIR, "config.example.json"), "w", encoding="utf-8") as fw:
+                    import json as jj
+                    jj.dump({"portal_url":"http://192.168.151.10","login_page":"/srun_portal_pc","username":"202411010313","password":"hra060331","ac_id":"1","check_interval":30,"retry_max":5,"retry_cooldown":180,"auto_start":true}, fw, indent=2)
+                sys.exit(1)
 
     # 单例检测（Windows Mutex）
     try:
@@ -600,7 +624,7 @@ def main():
         # 弹窗显示错误（无控制台时用户可见）
         try:
             ctypes.windll.user32.MessageBoxW(
-                None, f"程序运行出错：\n{e}\n\n详情见日志文件：\n{os.path.join(os.path.dirname(sys.executable) if getattr(sys,"frozen",False) else BASE_DIR, "data", "crash.log")}", "错误", 0
+                None, f"程序运行出错：\n{e}\n\n详情见日志文件：\n{os.path.join(DATA_DIR, "crash.log")}", "错误", 0
             )
         except:
             pass

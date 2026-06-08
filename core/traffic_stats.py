@@ -6,13 +6,18 @@
 import json
 import logging
 import os
+import sys
 import time
 import psutil
 from typing import Dict
 
 logger = logging.getLogger("CampusNet.Traffic")
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+# PyInstaller compat
+if getattr(sys, "frozen", False):
+    DATA_DIR = os.path.join(os.path.dirname(sys.executable), "data")
+else:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 TRAFFIC_FILE = os.path.join(DATA_DIR, "traffic_daily.json")
 
 

@@ -1,9 +1,10 @@
-﻿"""
+"""
 网络优化引擎
 5 项可逆优化 + 保活机制 + 检测功能
 所有修改备份到 data/network_backup.json，支持一键还原
 """
 import json
+import sys
 import logging
 import os
 import socket
@@ -14,7 +15,11 @@ from typing import Dict, List, Tuple
 
 logger = logging.getLogger("CampusNet.Optimizer")
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+# PyInstaller compat
+if getattr(sys, "frozen", False):
+    DATA_DIR = os.path.join(os.path.dirname(sys.executable), "data")
+else:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 BACKUP_FILE = os.path.join(DATA_DIR, "network_backup.json")
 
 # 优化项定义
