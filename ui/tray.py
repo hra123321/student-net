@@ -157,7 +157,8 @@ class SysTrayIcon:
         wnd_class.lpfnWndProc = wc
         wnd_class.cbClsExtra = 0
         wnd_class.cbWndExtra = 0
-        wnd_class.hInstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+        hInstance = ctypes.windll.kernel32.GetModuleHandleW(None)
+        wnd_class.hInstance = hInstance
         wnd_class.hIcon = 0
         wnd_class.hCursor = 0
         wnd_class.hbrBackground = 0
