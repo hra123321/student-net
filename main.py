@@ -343,8 +343,8 @@ class CampusNetApp:
                         time.sleep(5)
                         continue
 
-                    # 只检查是否在线
-                    is_online = self.srun_login.check_online()
+                    # 只检查是否在线（带重试，消除登录成功后的延迟误判）
+                    is_online = self.srun_login.check_online(retry=True)
                     if is_online:
                         self.login_status = "登录成功"
                         self.login_retry_count = 0

@@ -99,7 +99,18 @@ class SrunLogin:
         r = self._parse_jsonp(data)
         return r.get("challenge") if r else None
 
-    def check_online(self) -> bool:
+    def check_online(self, retry: bool = False) -> bool:
+        """检查是否在线，支持自动重试（登录成功后 rad_user_info 有延迟）"""
+        if retry:
+            for attempt in range(5):
+                result = self._check_online_once()
+                if result:
+                    return True
+                time.sleep(1)
+            return False
+        return self._check_online_once()
+
+    def _check_online_once(self) -> bool:
         data = self._do_request(
             self.base_url + "/cgi-bin/rad_user_info",
             {"ip": self.get_login_ip()})
@@ -141,6 +152,9 @@ class SrunLogin:
 
         if r.get("error") == "ok" or r.get("suc_msg") == "success":
             logger.info("登录成功!")
+            # 登录成功后等待并确认在线状态
+            time.sleep(2)
+            self.check_online(retry=True)
             return {"success": True, "message": "登录成功"}
 
         if r.get("error_msg") == "ip_already_online_error":

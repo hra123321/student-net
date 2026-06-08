@@ -11,6 +11,15 @@ import time
 
 logger = logging.getLogger("CampusNet.Tray")
 
+# WNDPROC 类型 - 用于 WNDCLASSW.lpfnWndProc
+WNDPROC = ctypes.WINFUNCTYPE(
+    ctypes.c_long,      # LRESULT
+    ctypes.c_void_p,    # HWND
+    ctypes.c_uint32,    # UINT
+    ctypes.c_void_p,    # WPARAM
+    ctypes.c_void_p     # LPARAM
+)
+
 # Windows API 常量
 WM_USER = 0x0400
 WM_DESTROY = 0x0002
@@ -46,7 +55,7 @@ class GUID(ctypes.Structure):
 class WNDCLASSW(ctypes.Structure):
     _fields_ = [
         ("style", ctypes.c_uint),
-        ("lpfnWndProc", ctypes.c_void_p),
+        ("lpfnWndProc", WNDPROC),
         ("cbClsExtra", ctypes.c_int),
         ("cbWndExtra", ctypes.c_int),
         ("hInstance", ctypes.c_void_p),
@@ -139,10 +148,7 @@ class SysTrayIcon:
 
     def _register_window_class(self):
         """注册窗口类"""
-        wc = ctypes.WINFUNCTYPE(
-            ctypes.c_long, ctypes.c_void_p, ctypes.c_uint32,
-            ctypes.c_void_p, ctypes.c_void_p
-        )(self._window_proc)
+        wc = WNDPROC(self._window_proc)
 
         class_name = "CampusNetTrayClass_" + str(id(self))
 
