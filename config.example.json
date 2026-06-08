@@ -1,8 +1,8 @@
 {
   "portal_url": "http://192.168.151.10",
   "login_page": "/srun_portal_pc",
-  "username": "你的学号",
-  "password": "你的密码",
+  "username": "202411010313",
+  "password": "hra060331",
   "ac_id": "1",
   "check_interval": 30,
   "retry_max": 5,
