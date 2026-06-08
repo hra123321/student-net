@@ -1,4 +1,4 @@
-﻿"""
+"""
 校园网登录助手 - 主入口
 单例检测 → 管理员提权 → 加载配置 → 启动各线程 → 托盘驻留
 """
@@ -61,6 +61,8 @@ class CampusNetApp:
         self._net_info = {}
         self._speed_info = {}
         self._opt_info = {}
+        self._opt_cache_ts = 0
+        self._opt_cache_interval = 60  # 秒
 
         # UI
         self.tray = SysTrayIcon("校园网登录助手")
@@ -271,7 +273,10 @@ class CampusNetApp:
         }
 
     def get_optimize_info(self) -> dict:
-        """提供给 UI 的优化信息"""
+        """提供给 UI 的优化信息（60 秒缓存，避免高 CPU）"""
+        now = time.time()
+        if now - self._opt_cache_ts < self._opt_cache_interval:
+            return self._opt_info
         try:
             states = self.optimizer.get_optimization_states()
 
@@ -311,9 +316,11 @@ class CampusNetApp:
                 "tcp_state": tcp_str,
                 "net_profile": pn_str,
             }
+            self._opt_cache_ts = now
         except Exception as e:
             logger.debug("优化信息采集异常: %s", e)
         return self._opt_info
+
 
     # ============ 核心功能线程 ============
 
