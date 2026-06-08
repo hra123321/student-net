@@ -42,7 +42,7 @@ a = Analysis(
         "tkinter.test",
         "unittest",
         "pydoc",
-        "email",
+        
         "http.server",
         "xmlrpc",
         "distutils",
