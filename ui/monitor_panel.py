@@ -36,24 +36,34 @@ class MonitorPanel:
 
     def show(self):
         """显示窗口"""
-        if self._window is None:
-            self._build_window()
-        self._window.deiconify()
-        self._window.lift()
-        self._visible = True
-        self._start_refresh()
+        try:
+            if self._window is None:
+                self._build_window()
+            if self._window and self._window.winfo_exists():
+                self._window.deiconify()
+                self._window.lift()
+                self._visible = True
+                self._start_refresh()
+        except Exception as e:
+            logger.error("打开面板失败: %s", e)
 
     def hide(self):
         """隐藏窗口"""
-        if self._window:
-            self._window.withdraw()
+        try:
+            if self._window:
+                self._window.withdraw()
+        except:
+            pass
         self._visible = False
 
     def close(self):
         """关闭窗口"""
         self._stop = True
         if self._window:
-            self._window.destroy()
+            try:
+                self._window.destroy()
+            except:
+                pass
             self._window = None
         self._visible = False
 
@@ -62,6 +72,9 @@ class MonitorPanel:
 
     def _build_window(self):
         """构建窗口布局"""
+        if not tk._default_root:
+            root = tk.Tk()
+            root.withdraw()
         self._window = tk.Toplevel()
         self._window.title("校园网登录助手 - 监控面板")
         self._window.geometry("900x680")
@@ -280,13 +293,17 @@ class MonitorPanel:
             return
 
         def refresh():
-            if not self._visible or self._stop:
-                return
             try:
+                if not self._visible or self._stop:
+                    return
                 self._update_all()
             except Exception as e:
                 logger.debug("UI 刷新异常: %s", e)
-            self._window.after(1000, refresh)
+            try:
+                if not self._stop and self._window and self._window.winfo_exists():
+                    self._window.after(1000, refresh)
+            except:
+                pass
 
         self._window.after(1000, refresh)
 
