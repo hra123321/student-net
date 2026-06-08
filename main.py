@@ -542,9 +542,13 @@ def main():
         # 尝试从模板复制
         example_path = os.path.join(BASE_DIR, "config.example.json")
         if os.path.exists(example_path):
-            import shutil
-            shutil.copy(example_path, config_path)
-            logger.info("已从 config.example.json 复制配置")
+            import shutil, codecs
+            # 读取模板（可能带 BOM）并写入无 BOM 副本
+            with codecs.open(example_path, "r", encoding="utf-8-sig") as fr:
+                raw = fr.read()
+            with open(config_path, "w", encoding="utf-8") as fw:
+                fw.write(raw)
+            logger.info("已从 config.example.json 复制配置（已去除 BOM）")
         else:
             logger.error("请创建 config.json 配置文件")
             ctypes.windll.user32.MessageBoxW(

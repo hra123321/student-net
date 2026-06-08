@@ -42,6 +42,22 @@ class GUID(ctypes.Structure):
     ]
 
 
+# WNDCLASSW - Python 3.12+ 的 ctypes.wintypes 已移除该结构
+class WNDCLASSW(ctypes.Structure):
+    _fields_ = [
+        ("style", ctypes.c_uint),
+        ("lpfnWndProc", ctypes.c_void_p),
+        ("cbClsExtra", ctypes.c_int),
+        ("cbWndExtra", ctypes.c_int),
+        ("hInstance", ctypes.c_void_p),
+        ("hIcon", ctypes.c_void_p),
+        ("hCursor", ctypes.c_void_p),
+        ("hbrBackground", ctypes.c_void_p),
+        ("lpszMenuName", ctypes.c_wchar_p),
+        ("lpszClassName", ctypes.c_wchar_p),
+    ]
+
+
 # NOTIFYICONDATAW 结构
 class NOTIFYICONDATAW(ctypes.Structure):
     _fields_ = [
@@ -130,7 +146,7 @@ class SysTrayIcon:
 
         class_name = "CampusNetTrayClass_" + str(id(self))
 
-        wnd_class = ctypes.wintypes.WNDCLASSW()
+        wnd_class = WNDCLASSW()
         wnd_class.style = 0
         wnd_class.lpfnWndProc = wc
         wnd_class.cbClsExtra = 0
