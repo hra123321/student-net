@@ -16,6 +16,7 @@ a = Analysis(
         ("config.example.json", "."),
     ],
     hiddenimports=[
+        "email",
         "ctypes",
         "ctypes.wintypes",
         "json",

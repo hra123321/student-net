@@ -1,6 +1,6 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.2"
 #define MyAppPublisher "CampusNet"
 #define MyAppExeName "校园网登录助手.exe"
 #define MyRoot "..\"
