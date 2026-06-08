@@ -1,2 +1,2 @@
-﻿VERSION = '1.7'
+﻿VERSION = '1.8'
 BUILD_DATE = '2026-06-08'

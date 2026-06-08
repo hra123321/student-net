@@ -355,7 +355,7 @@ class MonitorPanel:
             mem_used = sys_info.get("mem_used", 0)
             mem_total = sys_info.get("mem_total", 0)
             w["mem_progress"].config(value=mem_pct)
-            from core.traffic_stats import TrafficStats
+            
             w["mem_label"].config(
                 text=f"{TrafficStats.format_bytes(mem_used)} / {TrafficStats.format_bytes(mem_total)}")
 
