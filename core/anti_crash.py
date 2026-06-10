@@ -168,6 +168,8 @@ class ProcessCleaner:
     @staticmethod
     def cleanup_edge():
         """清理可能残留的 Edge 进程"""
+        logger.debug("当前版本不再调用 Edge，跳过浏览器进程清理")
+        return
         try:
             # 查找由本程序启动的 Edge（通过命令行含特定标记）
             result = subprocess.run(

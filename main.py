@@ -42,6 +42,10 @@ class CampusNetApp:
         if config_path is None:
             config_path = os.path.join(BASE_DIR, "config.json")
         self.config = self._load_config(config_path)
+        self.credentials_configured = bool(
+            self.config.get("username", "").strip()
+            and self.config.get("password", "").strip()
+        )
 
         # 初始化各模块
         self.net_monitor = NetworkMonitor()
@@ -51,12 +55,13 @@ class CampusNetApp:
         self.traffic = TrafficStats()
 
         # 登录状态
-        self.login_status = "等待中"       # 登录中/登录成功/登录失败/等待重试
+        self.login_status = "等待中" if self.credentials_configured else "等待配置"
         self.login_retry_count = 0
         self.login_retry_left = self.config.get("retry_max", 5)
         self.login_next_retry = ""
         self._login_lock = threading.Lock()
         self._last_login_attempt = 0
+        self._last_login_success = 0
         self._in_cooldown = False
         self._cooldown_until = 0
 
@@ -340,6 +345,22 @@ class CampusNetApp:
         while self._running:
             try:
                 with self._login_lock:
+                    if not self.credentials_configured:
+                        self.login_status = "等待配置"
+                        self.login_retry_count = 0
+                        self.login_retry_left = max_retry
+                        self.login_next_retry = "请填写 config.json"
+                        time.sleep(10)
+                        continue
+
+                    if self._last_login_success and time.time() - self._last_login_success < 180:
+                        self.login_status = "登录成功"
+                        self.login_retry_count = 0
+                        self.login_retry_left = max_retry
+                        self.login_next_retry = ""
+                        time.sleep(5)
+                        continue
+
                     # 检查是否需要跳过（冷却中）
                     if self._cooldown_until and time.time() < self._cooldown_until:
                         self.login_status = "等待重试"
@@ -374,6 +395,7 @@ class CampusNetApp:
                         self.login_retry_left = max_retry
                         self.login_next_retry = ""
                         self._last_login_attempt = time.time()
+                        self._last_login_success = time.time()
                         # 通知托盘
                         self.tray.show_balloon("登录成功", "校园网已自动登录")
                     else:
@@ -466,7 +488,7 @@ class CampusNetApp:
         self.watchdog.register("login", self._login_worker)
         self.watchdog.register("traffic", self._traffic_worker)
         self.watchdog.register("keepalive", self._keepalive_worker)
-        self.watchdog.register("cleaner", self._process_cleaner_worker)
+        # 当前版本已使用深澜 HTTP 协议登录，不再启动 Edge，避免误清理用户浏览器。
 
         # 启动所有线程
         self.watchdog.start_all()
@@ -511,6 +533,7 @@ class CampusNetApp:
             self.login_retry_count = 0
             self.login_retry_left = self.config.get("retry_max", 5)
             self.login_status = "手动触发"
+            self._last_login_success = 0
             self.login_next_retry = ""
 
     def manual_optimize(self):

@@ -135,11 +135,12 @@ class SysTrayIcon:
         if not self._running:
             return
         try:
-            # NIF_INFO = 0x10, uTimeout is 4th field (0 = default)
+            # Pywin32 NOTIFYICONDATA order:
+            # hwnd, id, flags, callback, icon, tip, info, timeout, infoTitle, infoFlags
             nid_balloon = (self._nid[0], self._nid[1],
                            self._nid[2] | 0x10,
                            0, self._nid[4], self._nid[5],
-                           0, title[:63], message[:255], 0)
+                           message[:255], timeout_ms, title[:63], 0)
             win32gui.Shell_NotifyIcon(win32gui.NIM_MODIFY, nid_balloon)
         except Exception as e:
             logger.debug("Balloon failed: %s", e)
