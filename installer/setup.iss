@@ -1,9 +1,9 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.3.2"
+#define MyAppVersion "1.3.3"
 #define MyAppPublisher "CampusNet"
 #define MyAppURL "https://github.com/hra123321/student-net"
-#define MyAppExeName "校园网登录助手_v1.3.exe"
+#define MyAppExeName "校园网登录助手_v1.3.3.exe"
 #define SrcDir "C:\Users\123\Documents\校园网登录助手"
 
 [Setup]
@@ -16,7 +16,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 OutputDir={#SrcDir}\installer
-OutputBaseFilename=校园网登录助手_Setup_v1.3.2
+OutputBaseFilename=校园网登录助手_Setup_v1.3.3
 SetupIconFile=
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -30,7 +30,7 @@ ShowLanguageDialog=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "{#SrcDir}\dist_v1.3\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SrcDir}\dist_v1.3.3\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SrcDir}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
