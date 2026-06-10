@@ -35,3 +35,4 @@ build/
 dist_v*/
 build_v*/
 spec_v*/
+installer/*.exe

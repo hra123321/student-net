@@ -558,7 +558,7 @@ def main():
                 raw = fr.read()
             with open(config_path, "w", encoding="utf-8") as fw:
                 fw.write(raw)
-            logger.info("已从嵌入资源复制配置到 %%s", config_path)
+            logger.info("已从嵌入资源复制配置到 %s", config_path)
         else:
             example_local = os.path.join(BASE_DIR, "config.example.json")
             if os.path.exists(example_local):
@@ -575,7 +575,7 @@ def main():
                 )
                 with open(os.path.join(BASE_DIR, "config.example.json"), "w", encoding="utf-8") as fw:
                     import json as jj
-                    jj.dump({"portal_url":"http://192.168.151.10","login_page":"/srun_portal_pc","username":"202411010313","password":"hra060331","ac_id":"1","check_interval":30,"retry_max":5,"retry_cooldown":180,"auto_start":true}, fw, indent=2)
+                    jj.dump({"portal_url":"http://192.168.151.10","login_page":"/srun_portal_pc","username":"","password":"","ac_id":"1","check_interval":30,"retry_max":5,"retry_cooldown":180,"auto_start":true,"keepalive_ping_interval":30,"keepalive_http_interval":120}, fw, indent=2)
                 sys.exit(1)
 
     # 单例检测（Windows Mutex）

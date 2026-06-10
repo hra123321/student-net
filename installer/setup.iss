@@ -1,6 +1,6 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.3.2"
 #define MyAppPublisher "CampusNet"
 #define MyAppURL "https://github.com/hra123321/student-net"
 #define MyAppExeName "校园网登录助手_v1.3.exe"
@@ -16,7 +16,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 OutputDir={#SrcDir}\installer
-OutputBaseFilename=校园网登录助手_Setup_v1.3.1
+OutputBaseFilename=校园网登录助手_Setup_v1.3.2
 SetupIconFile=
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
