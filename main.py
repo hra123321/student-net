@@ -624,8 +624,10 @@ def main():
 
     # 开机自启（仅在首次或配置启用时）
     if app.config.get("auto_start", True):
-        if not check_auto_start():
+        if is_admin() and not check_auto_start():
             set_auto_start(True)
+        elif not is_admin():
+            logger.info("普通权限运行，跳过最高权限自启任务检查")
 
     try:
         app.start()
