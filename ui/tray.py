@@ -24,7 +24,7 @@ class SysTrayIcon:
         self._on_relogin = None
         self._on_optimize = None
         self._on_restore = None
-        self._msg_id = None
+        self._msg_id = win32con.WM_USER + 100
         self._class_name = None
 
     def set_handlers(self, on_double_click=None, on_quit=None):
@@ -47,17 +47,24 @@ class SysTrayIcon:
             return 0
 
         if msg == self._msg_id:
-            if lparam == win32con.WM_LBUTTONDBLCLK:
+            if lparam in (win32con.WM_LBUTTONUP, win32con.WM_LBUTTONDBLCLK):
                 if self._on_double_click:
                     self._on_double_click()
-            elif lparam == win32con.WM_RBUTTONDOWN:
+            elif lparam in (win32con.WM_RBUTTONDOWN, win32con.WM_RBUTTONUP):
                 self._show_context_menu()
             elif lparam == win32con.WM_CONTEXTMENU:
                 self._show_context_menu()
-            elif lparam == win32con.WM_LBUTTONDOWN:
-                pass
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
+
+    def _on_destroy(self, hwnd, msg, wparam, lparam):
+        """处理托盘隐藏窗口销毁。"""
+        win32gui.PostQuitMessage(0)
+        return 0
+
+    def _on_tray_notify(self, hwnd, msg, wparam, lparam):
+        """处理系统托盘点击消息。"""
+        return self._window_proc(hwnd, msg, wparam, lparam)
 
     def _show_context_menu(self):
         """显示右键菜单"""
@@ -68,11 +75,14 @@ class SysTrayIcon:
             win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "立即重登")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "一键优化")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 4, "一键还原")
-            win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, None)
+            win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, "")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 5, "退出")
 
             pos = win32gui.GetCursorPos()
-            win32gui.SetForegroundWindow(self._hwnd)
+            try:
+                win32gui.SetForegroundWindow(self._hwnd)
+            except Exception:
+                pass
             cmd = win32gui.TrackPopupMenu(
                 menu,
                 win32con.TPM_LEFTALIGN | win32con.TPM_RIGHTBUTTON | win32con.TPM_RETURNCMD,
@@ -112,7 +122,10 @@ class SysTrayIcon:
         """显示托盘图标"""
         # 创建隐藏窗口
         wc = win32gui.WNDCLASS()
-        wc.lpfnWndProc = self._window_proc
+        wc.lpfnWndProc = {
+            win32con.WM_DESTROY: self._on_destroy,
+            self._msg_id: self._on_tray_notify,
+        }
         wc.lpszClassName = "CampusNetTray_" + str(id(self))
         self._class_name = wc.lpszClassName
         wc.hInstance = win32api.GetModuleHandle(None)
@@ -132,8 +145,6 @@ class SysTrayIcon:
         if not self._hwnd:
             logger.error("CreateWindow failed")
             return
-
-        self._msg_id = win32con.WM_USER + 100
 
         # 托盘图标参数
         hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)

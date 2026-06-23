@@ -6,10 +6,10 @@ import ctypes
 import json
 import logging
 import os
+import queue
 import sys
 import threading
 import time
-import uuid
 
 # 路径适配
 if getattr(sys, "frozen", False):
@@ -32,6 +32,33 @@ from ui.monitor_panel import MonitorPanel
 from utils.admin import is_admin, elevate, set_auto_start, check_auto_start
 
 logger = logging.getLogger("CampusNet.Main")
+_INSTANCE_LOCK_HANDLE = None
+
+
+def acquire_single_instance_lock() -> bool:
+    """用 Windows 独占文件句柄实现单例。"""
+    global _INSTANCE_LOCK_HANDLE
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        lock_path = os.path.join(DATA_DIR, "app.lock")
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateFileW.restype = ctypes.c_void_p
+        handle = kernel32.CreateFileW(
+            lock_path,
+            0x80000000 | 0x40000000,
+            0,
+            None,
+            4,
+            0x80,
+            None,
+        )
+        if handle == ctypes.c_void_p(-1).value:
+            return False
+        _INSTANCE_LOCK_HANDLE = handle
+        return True
+    except Exception as e:
+        logger.warning("单例文件锁失败: %s", e)
+        return True
 
 
 class CampusNetApp:
@@ -78,12 +105,29 @@ class CampusNetApp:
         # UI
         self.tray = SysTrayIcon("校园网登录助手")
         self.panel = MonitorPanel(self)
+        self._ui_actions = queue.Queue()
 
         # 看门狗
         self.watchdog = Watchdog(check_interval=30)
 
         # 运行标志
         self._running = False
+
+    def _post_ui_action(self, action):
+        """把托盘回调转成主循环任务，避免在 Win32 回调里直接操作 Tk。"""
+        self._ui_actions.put(action)
+
+    def _run_ui_actions(self):
+        """执行托盘投递的 UI 任务。"""
+        while True:
+            try:
+                action = self._ui_actions.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                action()
+            except Exception as e:
+                logger.error("UI 任务执行失败: %s", e)
 
     @staticmethod
     def _load_config(path: str) -> dict:
@@ -506,8 +550,8 @@ class CampusNetApp:
 
         # 显示托盘
         self.tray.set_handlers(
-            on_double_click=lambda: self.panel.show(),
-            on_quit=lambda: self.stop()
+            on_double_click=lambda: self._post_ui_action(self.panel.show),
+            on_quit=lambda: self._post_ui_action(self.stop)
         )
         self.tray.set_relogin_handler(self.manual_relogin)
         self.tray.set_optimize_handler(self.manual_optimize)
@@ -525,7 +569,11 @@ class CampusNetApp:
         self.tray.show_balloon("已启动", "校园网登录助手正在后台运行")
 
         # 消息循环
-        self.tray.run_message_loop(idle_callback=self.panel.pump_events)
+        def idle():
+            self._run_ui_actions()
+            self.panel.pump_events()
+
+        self.tray.run_message_loop(idle_callback=idle)
 
     def stop(self):
         """停止应用"""
@@ -582,6 +630,14 @@ def main():
     # 数据目录
     os.makedirs(DATA_DIR, exist_ok=True)
 
+    if not acquire_single_instance_lock():
+        logger.warning("程序已在运行")
+        try:
+            ctypes.windll.user32.MessageBoxW(None, "校园网登录助手已在运行！", "提示", 0)
+        except Exception:
+            pass
+        return
+
     # 检查配置文件
     config_path = os.path.join(BASE_DIR, "config.json")
     if not os.path.exists(config_path):
@@ -612,24 +668,6 @@ def main():
                     import json as jj
                     jj.dump({"portal_url":"http://192.168.151.10","login_page":"/srun_portal_pc","username":"","password":"","ac_id":"1","check_interval":30,"retry_max":5,"retry_cooldown":180,"auto_start":true,"keepalive_ping_interval":30,"keepalive_http_interval":120}, fw, indent=2)
                 sys.exit(1)
-
-    # 单例检测（Windows Mutex）
-    try:
-        import ctypes
-        mutex_name = "Global\\CampusNetLoginAssistant_" + str(uuid.uuid4())
-        # 使用固定名称
-        mutex_name = "Global\\CampusNetLoginAssistant"
-        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
-        if mutex and ctypes.windll.kernel32.GetLastError() == 0xB7:  # ERROR_ALREADY_EXISTS
-            logger.warning("程序已在运行")
-            ctypes.windll.kernel32.CloseHandle(mutex)
-            # 显示提示
-            ctypes.windll.user32.MessageBoxW(
-                None, "校园网登录助手已在运行！", "提示", 0
-            )
-            return
-    except Exception as e:
-        logger.warning("单例检测失败: %s", e)
 
     # 启动应用
     app = CampusNetApp(config_path)
