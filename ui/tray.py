@@ -3,6 +3,7 @@
 使用 win32gui 实现系统托盘图标（比手写 ctypes 更可靠）
 """
 import logging
+import threading
 import win32api
 import win32con
 import win32gui
@@ -22,7 +23,9 @@ class SysTrayIcon:
         self._on_double_click = None
         self._on_relogin = None
         self._on_optimize = None
+        self._on_restore = None
         self._msg_id = None
+        self._class_name = None
 
     def set_handlers(self, on_double_click=None, on_quit=None):
         self._on_double_click = on_double_click
@@ -33,6 +36,9 @@ class SysTrayIcon:
 
     def set_optimize_handler(self, handler):
         self._on_optimize = handler
+
+    def set_restore_handler(self, handler):
+        self._on_restore = handler
 
     def _window_proc(self, hwnd, msg, wparam, lparam):
         """窗口消息处理"""
@@ -46,30 +52,46 @@ class SysTrayIcon:
                     self._on_double_click()
             elif lparam == win32con.WM_RBUTTONDOWN:
                 self._show_context_menu()
+            elif lparam == win32con.WM_CONTEXTMENU:
+                self._show_context_menu()
             elif lparam == win32con.WM_LBUTTONDOWN:
-                if self._on_double_click:
-                    self._on_double_click()
+                pass
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
     def _show_context_menu(self):
         """显示右键菜单"""
-        menu = win32gui.CreatePopupMenu()
-        win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "显示面板")
-        win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "立即重登")
-        win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "一键优化")
-        win32gui.AppendMenu(menu, win32con.MF_STRING, 4, "退出")
+        menu = None
+        try:
+            menu = win32gui.CreatePopupMenu()
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "显示面板")
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "立即重登")
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "一键优化")
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 4, "一键还原")
+            win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, None)
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 5, "退出")
 
-        pos = win32gui.GetCursorPos()
-        win32gui.SetForegroundWindow(self._hwnd)
-
-        cmd = win32gui.TrackPopupMenu(
-            menu, win32con.TPM_LEFTALIGN | win32con.TPM_RETURNCMD,
-            pos[0], pos[1], 0, self._hwnd, None
-        )
-
-        win32gui.DestroyMenu(menu)
-        self._handle_menu_command(cmd)
+            pos = win32gui.GetCursorPos()
+            win32gui.SetForegroundWindow(self._hwnd)
+            cmd = win32gui.TrackPopupMenu(
+                menu,
+                win32con.TPM_LEFTALIGN | win32con.TPM_RIGHTBUTTON | win32con.TPM_RETURNCMD,
+                pos[0],
+                pos[1],
+                0,
+                self._hwnd,
+                None,
+            )
+            win32gui.PostMessage(self._hwnd, win32con.WM_NULL, 0, 0)
+            self._handle_menu_command(cmd)
+        except Exception as e:
+            logger.error("显示托盘菜单失败: %s", e)
+        finally:
+            if menu:
+                try:
+                    win32gui.DestroyMenu(menu)
+                except Exception:
+                    pass
 
     def _handle_menu_command(self, cmd: int):
         """处理菜单命令"""
@@ -78,8 +100,10 @@ class SysTrayIcon:
         elif cmd == 2 and self._on_relogin:
             self._on_relogin()
         elif cmd == 3 and self._on_optimize:
-            self._on_optimize()
-        elif cmd == 4:
+            threading.Thread(target=self._on_optimize, daemon=True).start()
+        elif cmd == 4 and self._on_restore:
+            threading.Thread(target=self._on_restore, daemon=True).start()
+        elif cmd == 5:
             if self._on_quit:
                 self._on_quit()
             self.hide()
@@ -90,6 +114,7 @@ class SysTrayIcon:
         wc = win32gui.WNDCLASS()
         wc.lpfnWndProc = self._window_proc
         wc.lpszClassName = "CampusNetTray_" + str(id(self))
+        self._class_name = wc.lpszClassName
         wc.hInstance = win32api.GetModuleHandle(None)
         wc.hCursor = 0
         wc.hbrBackground = 0
@@ -113,8 +138,7 @@ class SysTrayIcon:
         # 托盘图标参数
         hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)
 
-        # NIF_GUID = 0x20 (某些 win32gui 版本未导出)
-        flags = win32gui.NIF_MESSAGE | win32gui.NIF_ICON | win32gui.NIF_TIP | 0x20
+        flags = win32gui.NIF_MESSAGE | win32gui.NIF_ICON | win32gui.NIF_TIP
 
         self._nid = (self._hwnd, 100, flags, self._msg_id, hicon, self._tooltip[:127], "")
 
@@ -158,13 +182,23 @@ class SysTrayIcon:
                 win32gui.DestroyWindow(self._hwnd)
         except:
             pass
+        try:
+            if self._class_name:
+                win32gui.UnregisterClass(self._class_name, win32api.GetModuleHandle(None))
+        except:
+            pass
         logger.info("托盘图标已隐藏")
 
-    def run_message_loop(self):
+    def run_message_loop(self, idle_callback=None):
         """运行消息循环（阻塞）"""
         import time
         while self._running:
             ret = win32gui.PumpWaitingMessages()
             if ret:
                 break
+            if idle_callback:
+                try:
+                    idle_callback()
+                except Exception as e:
+                    logger.debug("托盘空闲回调异常: %s", e)
             time.sleep(0.05)

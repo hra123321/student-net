@@ -479,6 +479,16 @@ class CampusNetApp:
 
     # ============ 生命周期 ============
 
+    @safe_thread
+    def _maintenance_worker(self):
+        """长期驻留维护线程：定期 GC 和整理工作集。"""
+        while self._running:
+            try:
+                ProcessCleaner.cleanup_runtime()
+                time.sleep(300)
+            except Exception:
+                time.sleep(300)
+
     def start(self):
         """启动应用"""
         self._running = True
@@ -488,6 +498,7 @@ class CampusNetApp:
         self.watchdog.register("login", self._login_worker)
         self.watchdog.register("traffic", self._traffic_worker)
         self.watchdog.register("keepalive", self._keepalive_worker)
+        self.watchdog.register("maintenance", self._maintenance_worker)
         # 当前版本已使用深澜 HTTP 协议登录，不再启动 Edge，避免误清理用户浏览器。
 
         # 启动所有线程
@@ -500,6 +511,7 @@ class CampusNetApp:
         )
         self.tray.set_relogin_handler(self.manual_relogin)
         self.tray.set_optimize_handler(self.manual_optimize)
+        self.tray.set_restore_handler(self.manual_restore)
         self.tray.show()
 
         # 面板回调
@@ -513,7 +525,7 @@ class CampusNetApp:
         self.tray.show_balloon("已启动", "校园网登录助手正在后台运行")
 
         # 消息循环
-        self.tray.run_message_loop()
+        self.tray.run_message_loop(idle_callback=self.panel.pump_events)
 
     def stop(self):
         """停止应用"""

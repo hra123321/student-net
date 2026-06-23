@@ -6,6 +6,7 @@
 - 日志轮转
 """
 import functools
+import gc
 import logging
 import os
 import subprocess
@@ -164,6 +165,23 @@ class Watchdog:
 
 class ProcessCleaner:
     """进程清理器"""
+
+    @staticmethod
+    def cleanup_runtime():
+        """长期驻留维护：触发 GC，并在 Windows 上温和整理工作集。"""
+        try:
+            collected = gc.collect()
+            logger.debug("GC 清理完成: %d", collected)
+        except Exception as e:
+            logger.debug("GC 清理失败: %s", e)
+
+        try:
+            if os.name == "nt":
+                import ctypes
+                handle = ctypes.windll.kernel32.GetCurrentProcess()
+                ctypes.windll.psapi.EmptyWorkingSet(handle)
+        except Exception as e:
+            logger.debug("工作集整理失败: %s", e)
 
     @staticmethod
     def cleanup_edge():

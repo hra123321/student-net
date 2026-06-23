@@ -23,9 +23,11 @@ class MonitorPanel:
         """
         self.dp = data_provider
         self._window = None
+        self._root = None
         self._visible = False
         self._stop = False
         self._widgets = {}  # 存储所有显示控件
+        self._refresh_started = False
 
     def toggle(self):
         """切换显示/隐藏"""
@@ -37,11 +39,13 @@ class MonitorPanel:
     def show(self):
         """显示窗口"""
         try:
+            self._stop = False
             if self._window is None:
                 self._build_window()
             if self._window and self._window.winfo_exists():
                 self._window.deiconify()
                 self._window.lift()
+                self._window.focus_force()
                 self._visible = True
                 self._start_refresh()
         except Exception as e:
@@ -65,7 +69,14 @@ class MonitorPanel:
             except:
                 pass
             self._window = None
+        if self._root:
+            try:
+                self._root.destroy()
+            except:
+                pass
+            self._root = None
         self._visible = False
+        self._refresh_started = False
 
     def is_visible(self) -> bool:
         return self._visible
@@ -73,8 +84,10 @@ class MonitorPanel:
     def _build_window(self):
         """构建窗口布局"""
         if not tk._default_root:
-            root = tk.Tk()
-            root.withdraw()
+            self._root = tk.Tk()
+            self._root.withdraw()
+        else:
+            self._root = tk._default_root
         self._window = tk.Toplevel()
         self._window.title("校园网登录助手 - 监控面板")
         self._window.geometry("900x680")
@@ -289,12 +302,14 @@ class MonitorPanel:
 
     def _start_refresh(self):
         """启动 UI 刷新循环"""
-        if self._stop:
+        if self._stop or self._refresh_started:
             return
+        self._refresh_started = True
 
         def refresh():
             try:
                 if not self._visible or self._stop:
+                    self._refresh_started = False
                     return
                 self._update_all()
             except Exception as e:
@@ -306,6 +321,20 @@ class MonitorPanel:
                 pass
 
         self._window.after(1000, refresh)
+
+    def pump_events(self):
+        """由托盘消息循环调用，驱动 Tk 事件，避免面板无 mainloop 时不刷新。"""
+        root = self._root or tk._default_root
+        if not root:
+            return
+        try:
+            root.update_idletasks()
+            root.update()
+        except tk.TclError:
+            self._window = None
+            self._root = None
+            self._visible = False
+            self._refresh_started = False
 
     def _update_all(self):
         """更新所有数据"""
