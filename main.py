@@ -11,15 +11,13 @@ import sys
 import threading
 import time
 
+from utils.paths import app_base_dir, bundled_dir, config_path as default_config_path, data_dir
+
 # 路径适配
-if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
-    MEIPASS_DIR = sys._MEIPASS
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    MEIPASS_DIR = BASE_DIR
+BASE_DIR = app_base_dir()
+MEIPASS_DIR = bundled_dir()
 sys.path.insert(0, BASE_DIR)
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = data_dir()
 
 from core.anti_crash import setup_logging, safe_thread, Watchdog, ProcessCleaner
 from core.network_monitor import NetworkMonitor, NETWORK_OK, NETWORK_DISCONNECTED
@@ -33,6 +31,50 @@ from utils.admin import is_admin, elevate, set_auto_start, check_auto_start
 
 logger = logging.getLogger("CampusNet.Main")
 _INSTANCE_LOCK_HANDLE = None
+
+
+def ensure_config_file() -> str:
+    """确保用户目录存在配置文件，避免安装目录不可写导致启动异常。"""
+    config_file = default_config_path()
+    if os.path.exists(config_file):
+        return config_file
+
+    candidates = [
+        os.path.join(BASE_DIR, "config.json"),
+        os.path.join(MEIPASS_DIR, "config.example.json"),
+        os.path.join(BASE_DIR, "config.example.json"),
+    ]
+    for candidate in candidates:
+        if not os.path.exists(candidate):
+            continue
+        try:
+            import codecs
+            with codecs.open(candidate, "r", encoding="utf-8-sig") as fr:
+                raw = fr.read()
+            with open(config_file, "w", encoding="utf-8") as fw:
+                fw.write(raw)
+            logger.info("配置已复制到用户目录: %s", config_file)
+            return config_file
+        except Exception as e:
+            logger.warning("复制配置失败 [%s]: %s", candidate, e)
+
+    default_config = {
+        "portal_url": "http://192.168.151.10",
+        "login_page": "/srun_portal_pc",
+        "username": "",
+        "password": "",
+        "ac_id": "1",
+        "check_interval": 30,
+        "retry_max": 5,
+        "retry_cooldown": 180,
+        "auto_start": True,
+        "keepalive_ping_interval": 30,
+        "keepalive_http_interval": 120,
+    }
+    with open(config_file, "w", encoding="utf-8") as fw:
+        json.dump(default_config, fw, ensure_ascii=False, indent=2)
+    logger.info("已创建默认配置: %s", config_file)
+    return config_file
 
 
 def acquire_single_instance_lock() -> bool:
@@ -67,8 +109,9 @@ class CampusNetApp:
     def __init__(self, config_path: str = None):
         # 加载配置
         if config_path is None:
-            config_path = os.path.join(BASE_DIR, "config.json")
+            config_path = default_config_path()
         self.config = self._load_config(config_path)
+        self.config_path = config_path
         self.credentials_configured = bool(
             self.config.get("username", "").strip()
             and self.config.get("password", "").strip()
@@ -115,6 +158,7 @@ class CampusNetApp:
 
     def _post_ui_action(self, action):
         """把托盘回调转成主循环任务，避免在 Win32 回调里直接操作 Tk。"""
+        logger.debug("投递 UI 任务: %s", getattr(action, "__name__", action))
         self._ui_actions.put(action)
 
     def _run_ui_actions(self):
@@ -125,9 +169,34 @@ class CampusNetApp:
             except queue.Empty:
                 break
             try:
+                logger.debug("执行 UI 任务: %s", getattr(action, "__name__", action))
                 action()
             except Exception as e:
                 logger.error("UI 任务执行失败: %s", e)
+
+    def save_credentials(self, username: str, password: str):
+        """保存校园网账号密码，并立即唤醒登录线程。"""
+        try:
+            self.config["username"] = username
+            self.config["password"] = password
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+
+            self.credentials_configured = True
+            self.srun_login.username = username
+            self.srun_login.password = password
+            with self._login_lock:
+                self._cooldown_until = 0
+                self._in_cooldown = False
+                self.login_retry_count = 0
+                self.login_retry_left = self.config.get("retry_max", 5)
+                self.login_next_retry = ""
+                self.login_status = "等待登录"
+            logger.info("校园网账号配置已保存")
+            return True, "已保存"
+        except Exception as e:
+            logger.error("保存账号配置失败: %s", e)
+            return False, str(e)
 
     @staticmethod
     def _load_config(path: str) -> dict:
@@ -562,11 +631,15 @@ class CampusNetApp:
         self.panel.set_optimize_callback(self.manual_optimize)
         self.panel.set_restore_callback(self.manual_restore)
         self.panel.set_relogin_callback(self.manual_relogin)
+        self.panel.set_credential_callback(self.save_credentials)
+        self.panel.initialize_hidden()
 
         logger.info("校园网登录助手已启动")
 
         # 显示启动通知
         self.tray.show_balloon("已启动", "校园网登录助手正在后台运行")
+        if not self.credentials_configured:
+            self._post_ui_action(self.panel.show)
 
         # 消息循环
         def idle():
@@ -638,38 +711,9 @@ def main():
             pass
         return
 
-    # 检查配置文件
-    config_path = os.path.join(BASE_DIR, "config.json")
-    if not os.path.exists(config_path):
-        logger.info("config.json 不存在，从嵌入资源复制...")
-        example_embedded = os.path.join(MEIPASS_DIR, "config.example.json")
-        if os.path.exists(example_embedded):
-            import shutil, codecs
-            with codecs.open(example_embedded, "r", encoding="utf-8-sig") as fr:
-                raw = fr.read()
-            with open(config_path, "w", encoding="utf-8") as fw:
-                fw.write(raw)
-            logger.info("已从嵌入资源复制配置到 %s", config_path)
-        else:
-            example_local = os.path.join(BASE_DIR, "config.example.json")
-            if os.path.exists(example_local):
-                import shutil, codecs
-                with codecs.open(example_local, "r", encoding="utf-8-sig") as fr:
-                    raw = fr.read()
-                with open(config_path, "w", encoding="utf-8") as fw:
-                    fw.write(raw)
-                logger.info("已从本地 config.example.json 复制配置")
-            else:
-                logger.error("config.json 不存在！")
-                ctypes.windll.user32.MessageBoxW(
-                    None, "配置文件不存在！\n将在当前目录创建 config.example.json，填写后重启。", "配置错误", 0
-                )
-                with open(os.path.join(BASE_DIR, "config.example.json"), "w", encoding="utf-8") as fw:
-                    import json as jj
-                    jj.dump({"portal_url":"http://192.168.151.10","login_page":"/srun_portal_pc","username":"","password":"","ac_id":"1","check_interval":30,"retry_max":5,"retry_cooldown":180,"auto_start":true,"keepalive_ping_interval":30,"keepalive_http_interval":120}, fw, indent=2)
-                sys.exit(1)
+    # Use per-user config directory; Program Files is not writable for normal users.
+    config_path = ensure_config_file()
 
-    # 启动应用
     app = CampusNetApp(config_path)
 
     # 开机自启（仅在首次或配置启用时）

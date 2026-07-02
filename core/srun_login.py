@@ -114,9 +114,17 @@ class SrunLogin:
         data = self._do_request(
             self.base_url + "/cgi-bin/rad_user_info",
             {"ip": self.get_login_ip()})
-        if not data: return False
+        if not data:
+            return False
         r = self._parse_jsonp(data)
-        return bool(r and r.get("user_name"))
+        if r:
+            return bool(r.get("user_name") or r.get("online_ip") or r.get("client_ip"))
+
+        # Some srun versions return CSV: username,...,ip,...
+        parts = [part.strip() for part in data.strip().split(",")]
+        if len(parts) >= 9:
+            return bool(parts[0] and parts[8] == self.get_login_ip())
+        return False
 
     def login(self) -> dict:
         """完整登录流程"""
@@ -157,8 +165,10 @@ class SrunLogin:
             self.check_online(retry=True)
             return {"success": True, "message": "登录成功"}
 
-        if r.get("error_msg") == "ip_already_online_error":
-            return {"success": True, "message": "IP 已在线"}
+        already_online = {r.get("error"), r.get("error_msg"), r.get("res")}
+        if "ip_already_online_error" in already_online:
+            logger.info("IP already online")
+            return {"success": True, "message": "IP already online"}
 
         err = r.get("error") or r.get("error_msg") or str(r)[:100]
         logger.warning("登录失败: %s", err)

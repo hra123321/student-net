@@ -12,14 +12,11 @@ import subprocess
 import time
 import re
 from typing import Dict, List, Tuple
+from utils.paths import data_dir
 
 logger = logging.getLogger("CampusNet.Optimizer")
 
-# PyInstaller compat
-if getattr(sys, "frozen", False):
-    DATA_DIR = os.path.join(os.path.dirname(sys.executable), "data")
-else:
-    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+DATA_DIR = data_dir()
 BACKUP_FILE = os.path.join(DATA_DIR, "network_backup.json")
 
 # 优化项定义

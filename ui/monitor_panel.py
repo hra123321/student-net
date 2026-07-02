@@ -28,6 +28,7 @@ class MonitorPanel:
         self._stop = False
         self._widgets = {}  # 存储所有显示控件
         self._refresh_started = False
+        self._credential_callback = None
 
     def toggle(self):
         """切换显示/隐藏"""
@@ -43,13 +44,29 @@ class MonitorPanel:
             if self._window is None:
                 self._build_window()
             if self._window and self._window.winfo_exists():
+                self._window.state("normal")
                 self._window.deiconify()
                 self._window.lift()
+                self._window.attributes("-topmost", True)
+                self._window.after(300, lambda: self._window.attributes("-topmost", False))
                 self._window.focus_force()
                 self._visible = True
                 self._start_refresh()
+                self.pump_events()
+                if not getattr(self.dp, "credentials_configured", True):
+                    self._show_credential_dialog()
         except Exception as e:
             logger.error("打开面板失败: %s", e)
+
+    def initialize_hidden(self):
+        """预创建隐藏窗口，避免托盘点击后才初始化 Tk 导致窗口打不开。"""
+        try:
+            if self._window is None:
+                self._build_window()
+                self._window.withdraw()
+                self._visible = False
+        except Exception as e:
+            logger.error("初始化监控面板失败: %s", e)
 
     def hide(self):
         """隐藏窗口"""
@@ -287,6 +304,66 @@ class MonitorPanel:
 
     def set_relogin_callback(self, cb):
         self._relogin_callback = cb
+
+    def set_credential_callback(self, cb):
+        self._credential_callback = cb
+
+    def _show_credential_dialog(self):
+        """首次运行时引导填写账号密码。"""
+        if not self._window or getattr(self, "_credential_dialog_open", False):
+            return
+        self._credential_dialog_open = True
+        dialog = tk.Toplevel(self._window)
+        dialog.title("首次配置校园网账号")
+        dialog.geometry("360x190")
+        dialog.resizable(False, False)
+        dialog.transient(self._window)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(frame, text="请填写校园网账号和密码，保存后会自动登录。").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10)
+        )
+        ttk.Label(frame, text="账号：").grid(row=1, column=0, sticky=tk.E, pady=4)
+        username_var = tk.StringVar(value=getattr(self.dp, "config", {}).get("username", ""))
+        username_entry = ttk.Entry(frame, textvariable=username_var, width=28)
+        username_entry.grid(row=1, column=1, sticky=tk.W, pady=4)
+
+        ttk.Label(frame, text="密码：").grid(row=2, column=0, sticky=tk.E, pady=4)
+        password_var = tk.StringVar(value=getattr(self.dp, "config", {}).get("password", ""))
+        password_entry = ttk.Entry(frame, textvariable=password_var, width=28, show="*")
+        password_entry.grid(row=2, column=1, sticky=tk.W, pady=4)
+
+        status_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=status_var, foreground="#c62828").grid(
+            row=3, column=0, columnspan=2, sticky=tk.W, pady=(4, 0)
+        )
+
+        def on_save():
+            username = username_var.get().strip()
+            password = password_var.get().strip()
+            if not username or not password:
+                status_var.set("账号和密码不能为空")
+                return
+            if self._credential_callback:
+                ok, message = self._credential_callback(username, password)
+                if not ok:
+                    status_var.set(message or "保存失败")
+                    return
+            self._credential_dialog_open = False
+            dialog.destroy()
+
+        def on_close():
+            self._credential_dialog_open = False
+            dialog.destroy()
+
+        btns = ttk.Frame(frame)
+        btns.grid(row=4, column=0, columnspan=2, pady=12)
+        ttk.Button(btns, text="保存并登录", command=on_save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="稍后填写", command=on_close).pack(side=tk.LEFT, padx=5)
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
+        username_entry.focus_set()
 
     def _on_optimize_click(self):
         if self._optimize_callback:

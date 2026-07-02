@@ -64,6 +64,7 @@ class SysTrayIcon:
 
     def _on_tray_notify(self, hwnd, msg, wparam, lparam):
         """处理系统托盘点击消息。"""
+        logger.debug("托盘消息: lparam=%s", lparam)
         return self._window_proc(hwnd, msg, wparam, lparam)
 
     def _show_context_menu(self):
