@@ -413,6 +413,27 @@ class MonitorPanel:
             self._visible = False
             self._refresh_started = False
 
+    def schedule(self, callback, delay_ms: int = 0):
+        """在 Tk 主线程中执行回调。"""
+        root = self._root or tk._default_root
+        if root:
+            root.after(delay_ms, callback)
+
+    def mainloop(self):
+        """运行 Tk 主事件循环。"""
+        root = self._root or tk._default_root
+        if root:
+            root.mainloop()
+
+    def quit_loop(self):
+        """退出 Tk 主事件循环。"""
+        root = self._root or tk._default_root
+        if root:
+            try:
+                root.quit()
+            except tk.TclError:
+                pass
+
     def _update_all(self):
         """更新所有数据"""
         if not self._window or not self._visible:

@@ -1,9 +1,10 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.1"
 #define MyAppPublisher "CampusNet"
 #define MyAppURL "https://github.com/hra123321/student-net"
-#define MyAppExeName "校园网登录助手_v1.4.0.exe"
+#define MyAppExeName "校园网登录助手_v1.4.1.exe"
+#define MyAppBuildDir "校园网登录助手_v1.4.1"
 #define SrcDir "C:\Users\123\Documents\校园网登录助手"
 
 [Setup]
@@ -12,16 +13,16 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\{#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 OutputDir={#SrcDir}\installer
-OutputBaseFilename=校园网登录助手_Setup_v1.4.0
+OutputBaseFilename=校园网登录助手_Setup_v1.4.1
 SetupIconFile=
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 AlwaysRestart=no
 ShowLanguageDialog=no
 
@@ -29,7 +30,7 @@ ShowLanguageDialog=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "{#SrcDir}\dist_v1.4.0\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SrcDir}\dist_v1.4.1\{#MyAppBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SrcDir}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
@@ -44,9 +45,10 @@ Name: "{commonprograms}\{#MyAppName}\卸载"; Filename: "{uninstallexe}"
 Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Shortcuts:"
 
 [Run]
-Filename: "{sys}\schtasks.exe"; Parameters: "/Create /F /TN ""{#MyAppName}"" /TR """"""{app}\{#MyAppExeName}"""""" /SC ONLOGON /RL HIGHEST"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "Run 校园网登录助手"; Flags: nowait postinstall skipifsilent shellexec
 
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
+
 [UninstallRun]
-Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /F /TN ""{#MyAppName}"""; Flags: runhidden waituntilterminated
 Filename: "taskkill"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden

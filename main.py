@@ -31,6 +31,7 @@ from utils.admin import is_admin, elevate, set_auto_start, check_auto_start
 
 logger = logging.getLogger("CampusNet.Main")
 _INSTANCE_LOCK_HANDLE = None
+_INSTANCE_MUTEX_NAME = "Global\\CampusNetLoginAssistant_StudentNet"
 
 
 def ensure_config_file() -> str:
@@ -78,28 +79,23 @@ def ensure_config_file() -> str:
 
 
 def acquire_single_instance_lock() -> bool:
-    """用 Windows 独占文件句柄实现单例。"""
+    """用 Windows Mutex 实现单例，避免重复启动多个后台实例。"""
     global _INSTANCE_LOCK_HANDLE
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        lock_path = os.path.join(DATA_DIR, "app.lock")
         kernel32 = ctypes.windll.kernel32
-        kernel32.CreateFileW.restype = ctypes.c_void_p
-        handle = kernel32.CreateFileW(
-            lock_path,
-            0x80000000 | 0x40000000,
-            0,
-            None,
-            4,
-            0x80,
-            None,
-        )
-        if handle == ctypes.c_void_p(-1).value:
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        handle = kernel32.CreateMutexW(None, False, _INSTANCE_MUTEX_NAME)
+        last_error = kernel32.GetLastError()
+        if not handle:
+            logger.warning("创建单例互斥体失败: %s", last_error)
+            return True
+        if last_error == 183:
+            kernel32.CloseHandle(handle)
             return False
         _INSTANCE_LOCK_HANDLE = handle
         return True
     except Exception as e:
-        logger.warning("单例文件锁失败: %s", e)
+        logger.warning("单例互斥体失败: %s", e)
         return True
 
 
@@ -603,58 +599,59 @@ class CampusNetApp:
                 time.sleep(300)
 
     def start(self):
-        """启动应用"""
+        """启动应用，Tk 主循环留在主线程运行。"""
         self._running = True
 
-        # 注册看门狗线程
         self.watchdog.register("network_monitor", self._network_monitor_worker)
         self.watchdog.register("login", self._login_worker)
         self.watchdog.register("traffic", self._traffic_worker)
         self.watchdog.register("keepalive", self._keepalive_worker)
         self.watchdog.register("maintenance", self._maintenance_worker)
-        # 当前版本已使用深澜 HTTP 协议登录，不再启动 Edge，避免误清理用户浏览器。
 
-        # 启动所有线程
-        self.watchdog.start_all()
-
-        # 显示托盘
-        self.tray.set_handlers(
-            on_double_click=lambda: self._post_ui_action(self.panel.show),
-            on_quit=lambda: self._post_ui_action(self.stop)
-        )
-        self.tray.set_relogin_handler(self.manual_relogin)
-        self.tray.set_optimize_handler(self.manual_optimize)
-        self.tray.set_restore_handler(self.manual_restore)
-        self.tray.show()
-
-        # 面板回调
         self.panel.set_optimize_callback(self.manual_optimize)
         self.panel.set_restore_callback(self.manual_restore)
         self.panel.set_relogin_callback(self.manual_relogin)
         self.panel.set_credential_callback(self.save_credentials)
         self.panel.initialize_hidden()
 
+        self.tray.set_handlers(
+            on_double_click=lambda: self._post_ui_action(self.panel.show),
+            on_quit=lambda: self._post_ui_action(self.stop),
+        )
+        self.tray.set_relogin_handler(self.manual_relogin)
+        self.tray.set_optimize_handler(self.manual_optimize)
+        self.tray.set_restore_handler(self.manual_restore)
+
+        def tray_worker():
+            try:
+                self.tray.show()
+                self.tray.run_message_loop()
+            except Exception as e:
+                logger.error("托盘线程异常: %s", e)
+
+        threading.Thread(target=tray_worker, name="tray", daemon=True).start()
+        self.watchdog.start_all()
+
         logger.info("校园网登录助手已启动")
+        self.panel.schedule(lambda: self.tray.show_balloon("已启动", "校园网登录助手正在后台运行"), 500)
+        self._post_ui_action(self.panel.show)
 
-        # 显示启动通知
-        self.tray.show_balloon("已启动", "校园网登录助手正在后台运行")
-        if not self.credentials_configured:
-            self._post_ui_action(self.panel.show)
-
-        # 消息循环
-        def idle():
+        def poll_ui_actions():
             self._run_ui_actions()
-            self.panel.pump_events()
+            if self._running:
+                self.panel.schedule(poll_ui_actions, 50)
 
-        self.tray.run_message_loop(idle_callback=idle)
+        self.panel.schedule(poll_ui_actions, 50)
+        self.panel.mainloop()
 
     def stop(self):
         """停止应用"""
         logger.info("正在停止...")
         self._running = False
         self.watchdog.stop()
-        self.panel.close()
         self.tray.hide()
+        self.panel.close()
+        self.panel.quit_loop()
         logger.info("已停止")
 
     def manual_relogin(self):
@@ -705,10 +702,6 @@ def main():
 
     if not acquire_single_instance_lock():
         logger.warning("程序已在运行")
-        try:
-            ctypes.windll.user32.MessageBoxW(None, "校园网登录助手已在运行！", "提示", 0)
-        except Exception:
-            pass
         return
 
     # Use per-user config directory; Program Files is not writable for normal users.
