@@ -99,6 +99,27 @@ def acquire_single_instance_lock() -> bool:
         return True
 
 
+def should_show_panel() -> bool:
+    """判断本次启动是否应显示监控面板。"""
+    args = {arg.lower() for arg in sys.argv[1:]}
+    return "--show" in args or "/show" in args
+
+
+def bring_existing_panel_to_front() -> bool:
+    """重复启动时尝试唤醒已运行的监控面板。"""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, "校园网登录助手 - 监控面板")
+        if not hwnd:
+            return False
+        user32.ShowWindow(hwnd, 9)
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception as e:
+        logger.debug("唤醒已有窗口失败: %s", e)
+        return False
+
+
 class CampusNetApp:
     """主应用类：协调所有模块"""
 
@@ -633,8 +654,8 @@ class CampusNetApp:
         self.watchdog.start_all()
 
         logger.info("校园网登录助手已启动")
-        self.panel.schedule(lambda: self.tray.show_balloon("已启动", "校园网登录助手正在后台运行"), 500)
-        self._post_ui_action(self.panel.show)
+        if should_show_panel() or not self.credentials_configured:
+            self._post_ui_action(self.panel.show)
 
         def poll_ui_actions():
             self._run_ui_actions()
@@ -702,6 +723,8 @@ def main():
 
     if not acquire_single_instance_lock():
         logger.warning("程序已在运行")
+        if should_show_panel():
+            bring_existing_panel_to_front()
         return
 
     # Use per-user config directory; Program Files is not writable for normal users.
