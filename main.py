@@ -146,6 +146,9 @@ class CampusNetApp:
         self.login_retry_count = 0
         self.login_retry_left = self.config.get("retry_max", 5)
         self.login_next_retry = ""
+        self.network_status = NETWORK_DISCONNECTED
+        self.gateway_latency = 0.0
+        self.packet_loss = 100.0
         self._login_lock = threading.Lock()
         self._last_login_attempt = 0
         self._last_login_success = 0
@@ -157,10 +160,14 @@ class CampusNetApp:
 
         # 网络信息缓存
         self._net_info = {}
+        self._net_cache_ts = 0
+        self._net_cache_interval = 5
         self._speed_info = {}
         self._opt_info = {}
         self._opt_cache_ts = 0
-        self._opt_cache_interval = 60  # 秒
+        self._opt_cache_interval = 120  # 秒
+        self._opt_refreshing = False
+        self._opt_lock = threading.Lock()
 
         # UI
         self.tray = SysTrayIcon("校园网登录助手")
@@ -244,53 +251,20 @@ class CampusNetApp:
 
     def get_network_info(self) -> dict:
         """提供给 UI 的网络基础信息"""
+        now = time.time()
+        if self._net_info and now - self._net_cache_ts < self._net_cache_interval:
+            return self._net_info
         try:
-            import psutil, socket
             import subprocess
 
-            # 获取主网卡
-            gateways = psutil.net_if_addrs()
-            stats = psutil.net_if_stats()
-            gateway_ip = self.net_monitor.get_gateway()
-
-            adapter_name = ""
-            mac = "--"
-            ipv4 = "--"
-            mask = "--"
+            active = self.net_monitor.get_active_interface()
             dns = "--"
-            media_type = "--"
-
-            # 找有默认网关的网卡
-            for name, addrs in gateways.items():
-                if name in stats and stats[name].isup:
-                    has_ip = False
-                    for addr in addrs:
-                        if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                            adapter_name = name
-                            ipv4 = addr.address
-                            mask = addr.netmask
-                            has_ip = True
-                            break
-                    if has_ip:
-                        # 获取 MAC
-                        for addr in addrs:
-                            if addr.family == socket.AF_LINK or addr.family == -1:
-                                mac = addr.address
-                                break
-                        # 判断有线/无线
-                        if any(kw in name.lower() for kw in ("wi-fi", "wlan", "wireless", "802.11")):
-                            media_type = "无线"
-                        elif any(kw in name.lower() for kw in ("eth", "eathernet", "以太网", "pcie", "realtek", "intel")):
-                            media_type = "有线"
-                        else:
-                            media_type = stats[name].speed > 0 and "有线" or "无线"
-                        break
 
             # 获取 DNS
             try:
                 dns_result = subprocess.run(
                     ["nslookup", "baidu.com"],
-                    capture_output=True, text=True, timeout=5, creationflags=0x08000000
+                    capture_output=True, text=True, timeout=2, creationflags=0x08000000
                 )
                 for line in dns_result.stdout.splitlines():
                     if "Address:" in line and "192.168" not in line and "#53" not in line:
@@ -300,14 +274,15 @@ class CampusNetApp:
                 pass
 
             self._net_info = {
-                "adapter": adapter_name or "--",
-                "mac": mac,
-                "ipv4": ipv4,
-                "mask": mask,
-                "gateway": gateway_ip or "--",
+                "adapter": active.get("adapter") or "--",
+                "mac": active.get("mac") or "--",
+                "ipv4": active.get("ipv4") or "--",
+                "mask": active.get("mask") or "--",
+                "gateway": active.get("gateway") or self.net_monitor.get_gateway() or "--",
                 "dns": dns,
-                "media_type": media_type or "--",
+                "media_type": active.get("media_type") or "--",
             }
+            self._net_cache_ts = now
         except Exception as e:
             logger.debug("网络信息采集异常: %s", e)
         return self._net_info
@@ -326,20 +301,8 @@ class CampusNetApp:
                     link_speed = f"{speed_mbps} Mbps"
 
             # Ping 延迟
-            gateway = self.net_monitor.get_gateway()
-            latency = "--"
-            loss = "--"
-            if gateway:
-                ok, lat = self.net_monitor.icmp.ping(gateway, 3000)
-                if ok:
-                    latency = f"{lat:.1f} ms"
-                # 丢包率
-                self.net_monitor._ping_history.append(ok)
-                if len(self.net_monitor._ping_history) > 10:
-                    self.net_monitor._ping_history.pop(0)
-                loss_count = self.net_monitor._ping_history.count(False)
-                loss_pct = (loss_count / max(len(self.net_monitor._ping_history), 1)) * 100
-                loss = f"{loss_pct:.0f}%"
+            latency = f"{self.gateway_latency:.1f} ms" if self.gateway_latency > 0 else "--"
+            loss = f"{self.packet_loss:.0f}%" if self.packet_loss >= 0 else "--"
 
             # 实时速率
             session = self.traffic.get_session_stats()
@@ -389,16 +352,6 @@ class CampusNetApp:
 
     def get_login_info(self) -> dict:
         """提供给 UI 的登录状态"""
-        # 网络状态
-        net_status = NETWORK_DISCONNECTED
-        gateway = self.net_monitor.get_gateway()
-        if gateway:
-            ok, _ = self.net_monitor.icmp.ping(gateway, 2000)
-            if ok:
-                net_status = NETWORK_OK
-            else:
-                net_status = "网络受限"
-
         # 倒计时
         next_retry = self.login_next_retry
         if self._cooldown_until and time.time() < self._cooldown_until:
@@ -406,7 +359,7 @@ class CampusNetApp:
             next_retry = f"{remaining // 60}分{remaining % 60}秒后"
 
         return {
-            "net_status": net_status,
+            "net_status": self.network_status,
             "login_status": self.login_status,
             "retry_left": str(self.login_retry_left),
             "next_retry": next_retry,
@@ -414,10 +367,27 @@ class CampusNetApp:
         }
 
     def get_optimize_info(self) -> dict:
-        """提供给 UI 的优化信息（60 秒缓存，避免高 CPU）"""
+        """提供给 UI 的优化信息；慢检测在后台刷新，避免卡住 Tk 主线程。"""
         now = time.time()
-        if now - self._opt_cache_ts < self._opt_cache_interval:
-            return self._opt_info
+        if not self._opt_info:
+            self._opt_info = {
+                "bandwidth": "检测中",
+                "mtu": "检测中",
+                "dns_best": "检测中",
+                "power_save": "检测中",
+                "tcp_state": "检测中",
+                "net_profile": "检测中",
+            }
+        if now - self._opt_cache_ts >= self._opt_cache_interval and not self._opt_refreshing:
+            threading.Thread(target=self._refresh_optimize_info, daemon=True).start()
+        return dict(self._opt_info)
+
+    def _refresh_optimize_info(self):
+        """后台刷新网络优化状态，避免阻塞 UI。"""
+        with self._opt_lock:
+            if self._opt_refreshing:
+                return
+            self._opt_refreshing = True
         try:
             states = self.optimizer.get_optimization_states()
 
@@ -457,10 +427,11 @@ class CampusNetApp:
                 "tcp_state": tcp_str,
                 "net_profile": pn_str,
             }
-            self._opt_cache_ts = now
+            self._opt_cache_ts = time.time()
         except Exception as e:
             logger.debug("优化信息采集异常: %s", e)
-        return self._opt_info
+        finally:
+            self._opt_refreshing = False
 
 
     # ============ 核心功能线程 ============
@@ -558,7 +529,10 @@ class CampusNetApp:
         """网络监控线程：持续检测网络状态"""
         while self._running:
             try:
-                self.net_monitor.check_network()
+                status, latency, loss = self.net_monitor.check_network()
+                self.network_status = status
+                self.gateway_latency = latency
+                self.packet_loss = loss
                 time.sleep(2)
             except Exception:
                 time.sleep(2)
@@ -690,18 +664,43 @@ class CampusNetApp:
     def manual_optimize(self):
         """手动触发一键优化"""
         logger.info("手动触发一键优化")
+        self._opt_info = {
+            "bandwidth": "优化中",
+            "mtu": "优化中",
+            "dns_best": "优化中",
+            "power_save": "正在应用",
+            "tcp_state": "正在应用",
+            "net_profile": "正在应用",
+        }
+        self._opt_cache_ts = time.time()
         self.tray.show_balloon("优化中", "正在应用网络优化...")
         results = self.optimizer.apply_all()
         success_count = sum(1 for r in results if r["success"])
+        failed = [r["message"] for r in results if not r["success"]]
+        summary = f"成功 {success_count}/{len(results)} 项"
+        if failed:
+            summary += f"，失败：{failed[0][:30]}"
+        self._opt_info.update({
+            "power_save": summary,
+            "tcp_state": "已执行，详情见日志",
+            "net_profile": "已执行，详情见日志",
+        })
+        self._opt_cache_ts = 0
         self.tray.show_balloon(
             "优化完成",
-            f"成功 {success_count}/{len(results)} 项，可点击「一键还原」恢复"
+            f"{summary}，可点击「一键还原」恢复"
         )
 
     def manual_restore(self):
         """手动触发一键还原"""
         logger.info("手动触发一键还原")
+        self._opt_info.update({
+            "power_save": "还原中",
+            "tcp_state": "还原中",
+            "net_profile": "还原中",
+        })
         self.optimizer.restore_all()
+        self._opt_cache_ts = 0
         self.tray.show_balloon("已还原", "所有优化已恢复原始设置")
 
 

@@ -1,10 +1,10 @@
 ﻿; 校园网登录助手 - Inno Setup 安装脚本
 #define MyAppName "校园网登录助手"
-#define MyAppVersion "1.4.2"
+#define MyAppVersion "1.4.3"
 #define MyAppPublisher "CampusNet"
 #define MyAppURL "https://github.com/hra123321/student-net"
-#define MyAppExeName "校园网登录助手_v1.4.2.exe"
-#define MyAppBuildDir "校园网登录助手_v1.4.2"
+#define MyAppExeName "校园网登录助手_v1.4.3.exe"
+#define MyAppBuildDir "校园网登录助手_v1.4.3"
 #define SrcDir "C:\Users\123\Documents\校园网登录助手"
 
 [Setup]
@@ -17,7 +17,7 @@ DefaultDirName={localappdata}\{#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 OutputDir={#SrcDir}\installer
-OutputBaseFilename=校园网登录助手_Setup_v1.4.2
+OutputBaseFilename=校园网登录助手_Setup_v1.4.3
 SetupIconFile=
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -30,7 +30,7 @@ ShowLanguageDialog=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "{#SrcDir}\dist_v1.4.2\{#MyAppBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SrcDir}\dist_v1.4.3\{#MyAppBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SrcDir}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]

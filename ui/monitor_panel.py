@@ -346,13 +346,27 @@ class MonitorPanel:
             if not username or not password:
                 status_var.set("账号和密码不能为空")
                 return
-            if self._credential_callback:
-                ok, message = self._credential_callback(username, password)
-                if not ok:
-                    status_var.set(message or "保存失败")
-                    return
-            self._credential_dialog_open = False
-            dialog.destroy()
+            save_btn.config(state=tk.DISABLED)
+            status_var.set("正在保存...")
+
+            def worker():
+                ok, message = True, "已保存"
+                if self._credential_callback:
+                    ok, message = self._credential_callback(username, password)
+
+                def finish():
+                    if not dialog.winfo_exists():
+                        return
+                    if not ok:
+                        status_var.set(message or "保存失败")
+                        save_btn.config(state=tk.NORMAL)
+                        return
+                    self._credential_dialog_open = False
+                    dialog.destroy()
+
+                dialog.after(0, finish)
+
+            threading.Thread(target=worker, daemon=True).start()
 
         def on_close():
             self._credential_dialog_open = False
@@ -360,18 +374,39 @@ class MonitorPanel:
 
         btns = ttk.Frame(frame)
         btns.grid(row=4, column=0, columnspan=2, pady=12)
-        ttk.Button(btns, text="保存并登录", command=on_save).pack(side=tk.LEFT, padx=5)
+        save_btn = ttk.Button(btns, text="保存并登录", command=on_save)
+        save_btn.pack(side=tk.LEFT, padx=5)
         ttk.Button(btns, text="稍后填写", command=on_close).pack(side=tk.LEFT, padx=5)
         dialog.protocol("WM_DELETE_WINDOW", on_close)
         username_entry.focus_set()
 
     def _on_optimize_click(self):
         if self._optimize_callback:
-            threading.Thread(target=self._optimize_callback, daemon=True).start()
+            self._btn_optimize.config(state=tk.DISABLED, text="优化中...")
+
+            def worker():
+                try:
+                    self._optimize_callback()
+                finally:
+                    if self._window:
+                        self._window.after(0, lambda: self._btn_optimize.config(
+                            state=tk.NORMAL, text="一键优化"))
+
+            threading.Thread(target=worker, daemon=True).start()
 
     def _on_restore_click(self):
         if self._restore_callback:
-            threading.Thread(target=self._restore_callback, daemon=True).start()
+            self._btn_restore.config(state=tk.DISABLED, text="还原中...")
+
+            def worker():
+                try:
+                    self._restore_callback()
+                finally:
+                    if self._window:
+                        self._window.after(0, lambda: self._btn_restore.config(
+                            state=tk.NORMAL, text="一键还原"))
+
+            threading.Thread(target=worker, daemon=True).start()
 
     def _on_relogin_click(self):
         if self._relogin_callback:
@@ -393,11 +428,11 @@ class MonitorPanel:
                 logger.debug("UI 刷新异常: %s", e)
             try:
                 if not self._stop and self._window and self._window.winfo_exists():
-                    self._window.after(1000, refresh)
+                    self._window.after(500, refresh)
             except:
                 pass
 
-        self._window.after(1000, refresh)
+        self._window.after(500, refresh)
 
     def pump_events(self):
         """由托盘消息循环调用，驱动 Tk 事件，避免面板无 mainloop 时不刷新。"""

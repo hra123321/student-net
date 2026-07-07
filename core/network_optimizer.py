@@ -42,18 +42,10 @@ class NetworkOptimizer:
     def _get_active_adapter(self) -> str:
         """获取当前活跃的有线网卡名称"""
         try:
-            import psutil
-            stats = psutil.net_if_stats()
-            addrs = psutil.net_if_addrs()
-            for name, s in stats.items():
-                if s.isup and "loopback" not in name.lower() and name not in ("lo",):
-                    # 偏好有线网卡
-                    if any(kw in name.lower() for kw in ("eth", "eathernet", "以太网", "pcie", "realtek", "intel")):
-                        return name
-            # 回退：取第一个非 loopback 的活跃接口
-            for name, s in stats.items():
-                if s.isup and "loopback" not in name.lower():
-                    return name
+            from core.network_monitor import NetworkMonitor
+            active = NetworkMonitor().get_active_interface()
+            if active.get("adapter"):
+                return active["adapter"]
         except Exception:
             pass
         return ""
@@ -244,6 +236,7 @@ class NetworkOptimizer:
 
     def apply_all(self) -> List[Dict]:
         """应用所有优化"""
+        self._adapter_name = self._get_active_adapter()
         results = []
         handlers = [
             ("power_save", self._optimize_power_save),
@@ -333,7 +326,7 @@ class NetworkOptimizer:
             handle = dll.IcmpCreateFile()
             if handle and handle != 0:
                 ip_bytes = sock_lib.inet_aton(gateway_ip)
-                ip_int = struct.unpack(">I", ip_bytes)[0]
+                ip_int = struct.unpack("<I", ip_bytes)[0]
                 reply = ctypes.create_string_buffer(100)
                 dll.IcmpSendEcho(handle, ip_int, b"k" * 32, 32, None, reply, 100, 1000)
                 dll.IcmpCloseHandle(handle)
