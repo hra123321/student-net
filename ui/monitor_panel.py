@@ -129,7 +129,7 @@ class MonitorPanel:
         top_frame.pack(fill=tk.X, pady=2)
 
         # 区域1：网络基础
-        net_frame = ttk.LabelFrame(top_frame, text="🖧 网络基础", width=440, height=150)
+        net_frame = ttk.LabelFrame(top_frame, text="🖧 网络基础", width=440, height=175)
         net_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2)
         net_frame.pack_propagate(False)
 
@@ -151,13 +151,14 @@ class MonitorPanel:
             self._widgets["net"][key] = val
 
         # 区域2：登录状态
-        login_frame = ttk.LabelFrame(top_frame, text="🔐 登录状态", width=440, height=150)
+        login_frame = ttk.LabelFrame(top_frame, text="🔐 登录状态", width=440, height=175)
         login_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=2)
         login_frame.pack_propagate(False)
 
         self._widgets["login"] = {}
         login_items = [
             ("网络状态", "net_status"),
+            ("校园网识别", "campus_status"),
             ("登录状态", "login_status"),
             ("重试剩余", "retry_left"),
             ("下次重试", "next_retry"),
@@ -493,9 +494,14 @@ class MonitorPanel:
             net_color = {"网络正常": "#2e7d32", "网络断开": "#c62828", "网络受限": "#e65100"}
             w["net_status"].config(text=net_status, foreground=net_color.get(net_status, "#333"))
 
+            campus_status = login.get("campus_status", "检测中")
+            campus_color = "#2e7d32" if campus_status == "已识别校园网" else "#e65100"
+            w["campus_status"].config(text=campus_status, foreground=campus_color)
+
             login_status = login.get("login_status", "等待中")
             login_color = {"登录成功": "#2e7d32", "登录中": "#1565c0",
-                           "登录失败": "#c62828", "等待重试": "#e65100"}
+                           "登录失败": "#c62828", "等待重试": "#e65100",
+                           "非校园网，已暂停": "#e65100", "网络正常，跳过登录": "#2e7d32"}
             w["login_status"].config(text=login_status, foreground=login_color.get(login_status, "#333"))
             w["retry_left"].config(text=str(login.get("retry_left", "--")))
             w["next_retry"].config(text=str(login.get("next_retry", "--")))

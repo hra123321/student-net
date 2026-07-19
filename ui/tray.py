@@ -25,6 +25,7 @@ class SysTrayIcon:
         self._on_optimize = None
         self._on_restore = None
         self._msg_id = win32con.WM_USER + 100
+        self._show_message = win32con.WM_USER + 101
         self._class_name = None
 
     def set_handlers(self, on_double_click=None, on_quit=None):
@@ -47,13 +48,17 @@ class SysTrayIcon:
             return 0
 
         if msg == self._msg_id:
-            if lparam in (win32con.WM_LBUTTONUP, win32con.WM_LBUTTONDBLCLK):
+            if lparam == win32con.WM_LBUTTONDBLCLK:
                 if self._on_double_click:
                     self._on_double_click()
-            elif lparam in (win32con.WM_RBUTTONDOWN, win32con.WM_RBUTTONUP):
+            elif lparam in (win32con.WM_RBUTTONUP, win32con.WM_CONTEXTMENU):
                 self._show_context_menu()
-            elif lparam == win32con.WM_CONTEXTMENU:
-                self._show_context_menu()
+            return 0
+
+        if msg == self._show_message:
+            if self._on_double_click:
+                self._on_double_click()
+            return 0
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
@@ -126,8 +131,9 @@ class SysTrayIcon:
         wc.lpfnWndProc = {
             win32con.WM_DESTROY: self._on_destroy,
             self._msg_id: self._on_tray_notify,
+            self._show_message: self._window_proc,
         }
-        wc.lpszClassName = "CampusNetTray_" + str(id(self))
+        wc.lpszClassName = "CampusNetTrayWindow"
         self._class_name = wc.lpszClassName
         wc.hInstance = win32api.GetModuleHandle(None)
         wc.hCursor = 0

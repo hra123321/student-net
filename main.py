@@ -20,7 +20,12 @@ sys.path.insert(0, BASE_DIR)
 DATA_DIR = data_dir()
 
 from core.anti_crash import setup_logging, safe_thread, Watchdog, ProcessCleaner
-from core.network_monitor import NetworkMonitor, NETWORK_OK, NETWORK_DISCONNECTED
+from core.network_monitor import (
+    NetworkMonitor,
+    NETWORK_OK,
+    NETWORK_DISCONNECTED,
+    NETWORK_LIMITED,
+)
 from core.srun_login import SrunLogin
 from core.network_optimizer import NetworkOptimizer
 from core.system_info import SystemInfo
@@ -105,16 +110,36 @@ def should_show_panel() -> bool:
     return "--show" in args or "/show" in args
 
 
+def is_background_start() -> bool:
+    """判断是否由开机自启任务以后台模式启动。"""
+    args = {arg.lower() for arg in sys.argv[1:]}
+    return "--background" in args or "/background" in args
+
+
+def launch_requests_panel() -> bool:
+    """手动启动默认显示面板，开机后台任务不显示。"""
+    return should_show_panel() or not is_background_start()
+
+
 def bring_existing_panel_to_front() -> bool:
-    """重复启动时尝试唤醒已运行的监控面板。"""
+    """重复启动时唤醒已运行实例的面板。"""
     try:
         user32 = ctypes.windll.user32
         hwnd = user32.FindWindowW(None, "校园网登录助手 - 监控面板")
-        if not hwnd:
-            return False
-        user32.ShowWindow(hwnd, 9)
-        user32.SetForegroundWindow(hwnd)
-        return True
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)
+            user32.SetForegroundWindow(hwnd)
+            return True
+
+        # 已有实例可能处于后台，面板没有可见 HWND；通过托盘隐藏窗口投递显示消息。
+        show_message = 0x0400 + 101
+        for _ in range(10):
+            tray_hwnd = user32.FindWindowW("CampusNetTrayWindow", None)
+            if tray_hwnd:
+                user32.PostMessageW(tray_hwnd, show_message, 0, 0)
+                return True
+            time.sleep(0.1)
+        return False
     except Exception as e:
         logger.debug("唤醒已有窗口失败: %s", e)
         return False
@@ -136,7 +161,7 @@ class CampusNetApp:
 
         # 初始化各模块
         self.net_monitor = NetworkMonitor()
-        self.srun_login = SrunLogin(self.config)
+        self.srun_login = SrunLogin(self.config, self.net_monitor)
         self.optimizer = NetworkOptimizer()
         self.sys_info = SystemInfo()
         self.traffic = TrafficStats()
@@ -147,6 +172,8 @@ class CampusNetApp:
         self.login_retry_left = self.config.get("retry_max", 5)
         self.login_next_retry = ""
         self.network_status = NETWORK_DISCONNECTED
+        self.campus_network = False
+        self.campus_network_reason = "尚未检测"
         self.gateway_latency = 0.0
         self.packet_loss = 100.0
         self._login_lock = threading.Lock()
@@ -360,6 +387,7 @@ class CampusNetApp:
 
         return {
             "net_status": self.network_status,
+            "campus_status": "已识别校园网" if self.campus_network else self.campus_network_reason,
             "login_status": self.login_status,
             "retry_left": str(self.login_retry_left),
             "next_retry": next_retry,
@@ -470,10 +498,30 @@ class CampusNetApp:
                         continue
 
                     # 检查网络状态
+                    if not self.campus_network:
+                        self.login_status = "非校园网，已暂停"
+                        self.login_next_retry = "检测到校园网后自动恢复"
+                        time.sleep(5)
+                        continue
+
+                    # 只有校园网且外网受限时才允许发起认证。
+                    if self.network_status == NETWORK_DISCONNECTED:
+                        self.login_status = "等待网络"
+                        self.login_next_retry = "网卡或网关不可用"
+                        time.sleep(5)
+                        continue
+
                     gateway = self.net_monitor.get_gateway()
                     if not gateway:
                         self.login_status = "等待网络"
+                        self.login_next_retry = "等待默认网关"
                         time.sleep(5)
+                        continue
+
+                    if self.network_status == NETWORK_OK:
+                        self.login_status = "网络正常，跳过登录"
+                        self.login_next_retry = "仅在校园网受限时认证"
+                        time.sleep(check_interval)
                         continue
 
                     # 只检查是否在线（带重试，消除登录成功后的延迟误判）
@@ -533,6 +581,10 @@ class CampusNetApp:
                 self.network_status = status
                 self.gateway_latency = latency
                 self.packet_loss = loss
+                self.campus_network, self.campus_network_reason = self.net_monitor.check_campus_network(
+                    self.config.get("portal_url", ""),
+                    self.config.get("login_page", ""),
+                )
                 time.sleep(2)
             except Exception:
                 time.sleep(2)
@@ -628,7 +680,7 @@ class CampusNetApp:
         self.watchdog.start_all()
 
         logger.info("校园网登录助手已启动")
-        if should_show_panel() or not self.credentials_configured:
+        if launch_requests_panel():
             self._post_ui_action(self.panel.show)
 
         def poll_ui_actions():
@@ -722,7 +774,7 @@ def main():
 
     if not acquire_single_instance_lock():
         logger.warning("程序已在运行")
-        if should_show_panel():
+        if launch_requests_panel():
             bring_existing_panel_to_front()
         return
 

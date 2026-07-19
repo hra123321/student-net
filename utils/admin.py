@@ -93,7 +93,7 @@ def set_auto_start(enable: bool = True, app_name: str = TASK_NAME):
     task_name = app_name or TASK_NAME
     if enable:
         exe_path = _app_path()
-        task_run = f'"{exe_path}"'
+        task_run = f'"{exe_path}" --background'
         result = _run_hidden(
             [
                 "schtasks",

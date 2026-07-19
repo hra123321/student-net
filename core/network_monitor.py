@@ -10,6 +10,9 @@ import ctypes
 import ctypes.util
 import logging
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Tuple, Optional
 
 logger = logging.getLogger("CampusNet")
@@ -133,6 +136,9 @@ class NetworkMonitor:
         self._active_interface = {}
         self._active_interface_last_found = 0
         self._ping_history = []
+        self._campus_network = False
+        self._campus_reason = "尚未检测"
+        self._campus_last_checked = 0
 
     @staticmethod
     def _is_virtual_adapter(name: str) -> bool:
@@ -297,8 +303,10 @@ class NetworkMonitor:
 
         # 2. Ping 网关
         gateway = self.get_gateway()
+        gateway_ok = False
         if gateway:
             ok, lat = self.icmp.ping(gateway, 3000)
+            gateway_ok = ok
             self._ping_history.append(ok)
             if len(self._ping_history) > 10:
                 self._ping_history.pop(0)
@@ -306,23 +314,84 @@ class NetworkMonitor:
             loss_pct = (loss_count / max(len(self._ping_history), 1)) * 100
 
             if ok:
-                status = NETWORK_OK
+                status = NETWORK_LIMITED
                 latency = lat
                 loss = loss_pct
             else:
                 status = NETWORK_LIMITED
                 loss = 100
-        else:
-            status = NETWORK_LIMITED
 
-        # 3. DNS 补充检测
-        if status != NETWORK_OK:
-            try:
-                socket.gethostbyname("baidu.com")
-                if status == NETWORK_DISCONNECTED:
-                    status = NETWORK_LIMITED
-            except Exception:
-                if status != NETWORK_DISCONNECTED:
-                    status = NETWORK_DISCONNECTED
+        # 3. DNS 必须成功且网关可达，才认为是正常联网。
+        dns_ok = False
+        try:
+            socket.gethostbyname("baidu.com")
+            dns_ok = True
+        except Exception:
+            dns_ok = False
+
+        if gateway_ok and dns_ok:
+            status = NETWORK_OK
+        elif gateway_ok or dns_ok:
+            status = NETWORK_LIMITED
+        else:
+            status = NETWORK_DISCONNECTED
 
         return status, latency, loss
+
+    def check_campus_network(self, portal_url: str, login_page: str = "") -> Tuple[bool, str]:
+        """通过门户页面指纹判断当前连接是否属于校园网。
+
+        仅检查配置的门户地址，不访问外部网站，也不把普通可联网状态当成校园网。
+        返回 (是否校园网, 说明)。
+        """
+        now = time.time()
+        if now - self._campus_last_checked < 10:
+            return self._campus_network, self._campus_reason
+
+        self._campus_last_checked = now
+        active = self.get_active_interface()
+        if not active or not active.get("ipv4") or active.get("virtual"):
+            self._campus_network = False
+            self._campus_reason = "未检测到可用物理网卡"
+            return False, self._campus_reason
+
+        try:
+            parsed = urllib.parse.urlsplit(portal_url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("门户地址无效")
+            path = login_page or "/"
+            if not path.startswith("/"):
+                path = "/" + path
+            target = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+            class _NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    return None
+
+            request = urllib.request.Request(
+                target,
+                headers={"User-Agent": "CampusNetAssistant/1.4"},
+                method="GET",
+            )
+            opener = urllib.request.build_opener(_NoRedirect)
+            with opener.open(request, timeout=2) as response:
+                body = response.read(64 * 1024).decode("utf-8", errors="ignore").lower()
+                status_code = getattr(response, "status", 200)
+
+            markers = ("srun", "srun_portal", "get_challenge", "ac_id", "login")
+            marker_count = sum(1 for marker in markers if marker in body)
+            if 200 <= status_code < 400 and marker_count >= 2:
+                self._campus_network = True
+                self._campus_reason = "已识别校园网门户"
+            else:
+                self._campus_network = False
+                self._campus_reason = "门户指纹不匹配"
+        except urllib.error.HTTPError as exc:
+            self._campus_network = False
+            self._campus_reason = f"门户返回 HTTP {exc.code}"
+        except Exception as exc:
+            self._campus_network = False
+            self._campus_reason = "校园网门户不可达"
+            logger.debug("校园网识别失败: %s", exc)
+
+        return self._campus_network, self._campus_reason

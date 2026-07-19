@@ -18,7 +18,7 @@ logger = logging.getLogger("CampusNet.Login")
 class SrunLogin:
     """深澜认证登录器"""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, network_monitor=None):
         self.config = config
         self.base_url = config["portal_url"].rstrip("/")
         self.username = config["username"]
@@ -26,6 +26,7 @@ class SrunLogin:
         self.ac_id = config.get("ac_id", "")
         self._ip = None
         self._opener = None
+        self.network_monitor = network_monitor
 
     def _get_opener(self):
         if self._opener is None:
@@ -81,11 +82,17 @@ class SrunLogin:
         self._fetch_page_config()
         if not self._ip:
             try:
+                if self.network_monitor:
+                    active = self.network_monitor.get_active_interface()
+                    if active.get("ipv4"):
+                        self._ip = active["ipv4"]
+                        return self._ip
                 import psutil, socket
                 for name, addrs in psutil.net_if_addrs().items():
                     for addr in addrs:
                         if addr.family == socket.AF_INET and not addr.address.startswith("127.") and not addr.address.startswith("169."):
-                            self._ip = addr.address; return self._ip
+                            self._ip = addr.address
+                            return self._ip
             except: pass
         self._ip = self._ip or "0.0.0.0"
         return self._ip
